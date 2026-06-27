@@ -1,0 +1,4 @@
+# Simulation results
+tests/results/
+*.vtu
+*.pvd

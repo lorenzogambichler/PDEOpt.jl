@@ -13,7 +13,7 @@ u ∈ [u⁻,u⁺]         on Ω
 β - Actuator shape function
 =#
 
-@proto struct SolverCache{Tfact}
+struct SolverCache{Tfact}
     K::Tfact
     f::Vector{Float64}
     y::Vector{Float64}
@@ -62,20 +62,21 @@ function assemble_global(cellvalues::CellValues, K::SparseMatrixCSC, f::Vector{F
 end
 
 function sol!(cache)
-    ldiv!(cache.u, cache.K, cache.f)
+    ldiv!(cache.y, cache.K, cache.f)
 end
 
-function write_vtk(FileName::String, cache)
-    VTKGridFile(FileName, cache.dh) do vtk
-        write_solution(vtk, cache.dh, cache.u)
+function write_vtk(FilePath::String, cache)
+    VTKGridFile(FilePath, cache.dh) do vtk
+        write_solution(vtk, cache.dh, cache.y)
     end
 end
 
 function setup_cache()
     grid = generate_grid(Quadrilateral, (20, 20))
 
-    ip = Lagrange{RefQuadrilateral,1}()
-    qr = QuadratureRule{RefQuadrilateral}(2)
+    order = 2
+    ip = Lagrange{RefQuadrilateral, order}()
+    qr = QuadratureRule{RefQuadrilateral}(2*order)
     cellvalues = CellValues(qr, ip)
 
     dh = DofHandler(grid)
@@ -83,7 +84,7 @@ function setup_cache()
     close!(dh)
 
     K = allocate_matrix(dh)
-    f = zeros(ndofs(dh));
+    f = zeros(ndofs(dh))
 
     ch = ConstraintHandler(dh)
     ∂Ω = union(
@@ -103,11 +104,10 @@ function setup_cache()
     y = zeros(ndofs(dh))
 
     cache = SolverCache(K_fact, f, y, dh)
-
     return cache
 end
 
 cache = setup_cache()
 sol!(cache)
-write_vtk("poisson_test", cache)
+write_vtk("tests/poisson_CG_test", cache)
 
