@@ -5,7 +5,7 @@ using LinearAlgebra
 
 export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advection!,
     assemble_advection_interface!, assemble_advection_boundary!, assemble_inflow!,
-    assemble_reaction!, getdistance, getdiameter
+    assemble_reaction!, interface_field_dofs, getdistance, getdiameter
 
 # Mass martix over element
 function assemble_mass!(Me::Matrix{Float64}, cv::CellValues)
@@ -194,11 +194,11 @@ function assemble_inflow!(fe::Vector{Float64}, fv::FacetValues, β::Vec, g,
     return fe
 end
 
-# Reaction residual re, tangent Je over element (state-dependent, nonlinear)
-function assemble_reaction!(Je::Matrix{Float64}, re::Vector{Float64}, cv::CellValues,
+# Reaction residual re, tangent Jre over element (state-dependent, nonlinear)
+function assemble_reaction!(Jre::Matrix{Float64}, re::Vector{Float64}, cv::CellValues,
     ye::AbstractVector{Float64}, r, r′)
     n_basefuncs = getnbasefunctions(cv)
-    fill!(Je, 0)
+    fill!(Jre, 0)
     fill!(re, 0)
 
     # Quadrature
@@ -215,11 +215,11 @@ function assemble_reaction!(Je::Matrix{Float64}, re::Vector{Float64}, cv::CellVa
             # Trial
             for j = 1:n_basefuncs
                 y = shape_value(cv, q_point, j)
-                Je[i, j] += r′q * y * v * detJdx
+                Jre[i, j] += r′q * y * v * detJdx
             end
         end
     end
-    return Je, re
+    return Jre, re
 end
 
 # Coupled pointwise reaction for two fields (C, T) over an element. Sources
@@ -261,5 +261,7 @@ end
 
 getdistance(p1::Vec{N, T}, p2::Vec{N, T}) where {N, T} = norm(p1 - p2);
 getdiameter(cell_coords::Vector{Vec{N, T}}) where {N, T} = maximum(getdistance.(cell_coords, reshape(cell_coords, (1, :))));
+
+# TODO: interface_field_dofs
 
 end

@@ -4,25 +4,23 @@ using SparseArrays
 using WriteVTK
 using PDEOpt
 
-struct SolverCache{TLfact,Tfact,Tdh,Tcv,F1,F2,F3}
-    L_fact::TLfact # LU of A 
-    A::SparseMatrixCSC{Float64,Int} # M + Δt/2·K 
-    R::SparseMatrixCSC{Float64,Int} # M - Δt/2·K 
-    J::SparseMatrixCSC{Float64,Int} # Newton Jacobian
-    Jr::SparseMatrixCSC{Float64,Int} # reaction Jacobian 
-    fact::Tfact # LU of J
-    Je::Matrix{Float64} # element reaction Jacobian 
+#=
+TODO:
+- Add Robin BC for wall (Twall)
+- Add p-field (algebraic, ergun)
+- Add T- and p-dependence for D and λ
+=#
+
+struct ProblemCache{Tdh,Tcv,F1,F2,F3}
+    M::SparseMatrixCSC{Float64,Int} # mass
+    K::SparseMatrixCSC{Float64,Int} # advection + diffusion (constant)
+    Jr::SparseMatrixCSC{Float64,Int} # reaction Jacobian (shares K's pattern)
+    r::Vector{Float64} # global reaction residual buffer
+    Jre::Matrix{Float64} # element reaction Jacobian
     re::Vector{Float64} # element reaction residual
-    fr::Vector{Float64} # global reaction residual buffer
     f_in::Vector{Float64} # unit inflow load ∫_∂Ω_in -(β·ν) g(x) y ds, scaled by τ(t)
-    y::Matrix{Float64} 
-    temp1::Vector{Float64}
-    temp2::Vector{Float64}
-    temp3::Vector{Float64}
     dh::Tdh
     cv::Tcv
-    Δt::Float64
-    N::Int64
     src::F1 # coupled source terms for C, T
     srcJac::F2 # source term Jacobian
     τ::F3 # inlet time modulation for g(x)⋅τ(t)
@@ -106,19 +104,19 @@ function assemble_diff_global!()
 end
 
 
-# Global coupled reaction residual fr and Jacobian Jr (CC/CT/TC/TT blocks) at (C,T)
-function assemble_react_global!(Jr::SparseMatrixCSC, fr::Vector{Float64}, cache::SolverCache, y::AbstractVector)
-    cr, tr = dof_range(cache.dh, :C), dof_range(cache.dh, :T)
-    assembler = start_assemble(Jr, fr)
-    for cell in CellIterator(cache.dh)
-        reinit!(cache.cv, cell)
+# Global coupled reaction residual r and Jacobian Jr (CC/CT/TC/TT blocks) at (C,T)
+function assemble_react_global!(Jr::SparseMatrixCSC, r::Vector{Float64}, prob::ProblemCache, y::AbstractVector)
+    cr, tr = dof_range(prob.dh, :C), dof_range(prob.dh, :T)
+    assembler = start_assemble(Jr, r)
+    for cell in CellIterator(prob.dh)
+        reinit!(prob.cv, cell)
         dofs = celldofs(cell)
         Ce = @view y[@view dofs[cr]]
         Te = @view y[@view dofs[tr]]
-        assemble_reaction!(cache.Je, cache.re, cache.cv, Ce, Te, cache.src, cache.srcJac)
-        assemble!(assembler, dofs, cache.Je, cache.re)
+        assemble_reaction!(prob.Jre, prob.re, prob.cv, Ce, Te, prob.src, prob.srcJac)
+        assemble!(assembler, dofs, prob.Jre, prob.re)
     end
-    return Jr, fr
+    return Jr, r
 end
 
 # Global weak inflow into frange, f_in[frange] += ∫_∂Ω_in -(β·ν) g(x) v ds (additive)
@@ -133,47 +131,42 @@ function assemble_inflow_global!(f_in::Vector{Float64}, fv::FacetValues, dh::Dof
     return f_in
 end
 
-# reaction Jacobian cache.Jr and residual cache.fr at y, passed to cn_solve!
-react!(cache, y) = assemble_react_global!(cache.Jr, cache.fr, cache, y)
+# reaction Jacobian prob.Jr and residual prob.r at y, passed to cn_solve!
+react!(prob, y) = assemble_react_global!(prob.Jr, prob.r, prob, y)
 
-function write_vtk(FilePath::String, cache::SolverCache)
+function write_vtk(FilePath::String, cache::CNCache)
+    dh = cache.prob.dh
     pvd = paraview_collection(FilePath)
     for n = 1:cache.N
         t = (n - 1) * cache.Δt
-        VTKGridFile("$(FilePath)_$(n)", cache.dh) do vtk
-            write_solution(vtk, cache.dh, cache.y[:, n])  
+        VTKGridFile("$(FilePath)_$(n)", dh) do vtk
+            write_solution(vtk, dh, cache.y[:, n])
             pvd[t] = vtk
         end
     end
     close(pvd)
 end
 
-# Arrhenius term R = Da·exp(-γ/T)·C  (T floored at ε > 0)
-# use callable structs to avoid capture boxing
 struct ArrheniusSrc # (C,T) -> (sC, sT)
-    Da::Float64; γ::Float64; q::Float64; ε::Float64
+    Da::Float64; γ::Float64; q::Float64; T_floor::Float64
 end
+
 function (a::ArrheniusSrc)(C, T)
-    R = a.Da * exp(-a.γ / max(T, a.ε)) * C
+    R = a.Da * exp(-a.γ / max(T, a.T_floor)) * C # enforce positive T
     return (-R, a.q * R)
 end
 
 struct ArrheniusJac # (C,T) -> (∂sC/∂C, ∂sC/∂T, ∂sT/∂C, ∂sT/∂T)
-    Da::Float64; γ::Float64; q::Float64; ε::Float64
+    Da::Float64; γ::Float64; q::Float64; T_floor::Float64
 end
 function (a::ArrheniusJac)(C, T)
-    e = a.Da * exp(-a.γ / max(T, a.ε)) # ∂R/∂C
+    e = a.Da * exp(-a.γ / max(T, a.T_floor)) # ∂R/∂C
     R = e * C
-    RT = T > a.ε ? R * a.γ / T^2 : 0.0 # ∂R/∂T (0 in the floored region)
+    RT = T > a.T_floor ? R * a.γ / T^2 : 0.0 # ∂R/∂T
     return (-e, -RT, a.q * e, a.q * RT)
 end
 
-function setup_cache()
-    # Time-stepping
-    tf = 2.5
-    Δt = 0.01
-    N = round(Int64, tf / Δt) + 1
-
+function setup_problem(tf::Float64)
     # Parameters
     β = Vec((2.0, 0.0))
     D = SymmetricTensor{2,2,Float64}((0.0, 0.0, 1e-2)) # (ax, 0, rad)
@@ -206,7 +199,7 @@ function setup_cache()
     K = allocate_matrix(dh; topology=topology, coupling=trues(2, 2), interface_coupling=[true false; false true])
     M = copy(K) # same sparsity pattern as K
 
-    # inlets  y_in(x, t) = g(x)·τ_in(t)  (shared ramp)
+    # inlets y_in(x, t) = g(x)·τ_in(t)  
     g_C(x) = 1.0
     g_T(x) = 1.0
     τ_in(t) = 2.0 * clamp(t / (0.5 * tf), -1.0, 1.0)
@@ -223,39 +216,32 @@ function setup_cache()
     assemble_inflow_global!(f_in, facetvalues, dh, ∂Ω_in, β, g_C, cr)
     assemble_inflow_global!(f_in, facetvalues, dh, ∂Ω_in, β, g_T, tr)
 
-    # CN matrices, nzval to keep C–T blocks for coupled Jr
-    A = copy(K)
-    R = copy(K)
-    @. A.nzval = M.nzval + 0.5 * Δt * K.nzval # implicit
-    @. R.nzval = M.nzval - 0.5 * Δt * K.nzval # explicit
-    J = copy(A) # Newton Jacobian
-    Jr = copy(A) # reaction Jacobian buffer
-    fact = lu(J) # cached symbolic factorizaation
-
-    L_fact = lu(A)
+    # reaction Jac buffer, same pattern as K to keep C–T coupling blocks
+    Jr = copy(K)
 
     nbf = getnbasefunctions(cv)
-    Je = zeros(2nbf, 2nbf) # coupled (C,T) element Jacobian
+    Jre = zeros(2nbf, 2nbf) # coupled (C,T) element Jacobian
     re = zeros(2nbf)
-    fr = zeros(ndofs(dh))
+    r = zeros(ndofs(dh))
 
-    temp1 = zeros(ndofs(dh))
-    temp2 = zeros(ndofs(dh))
-    temp3 = zeros(ndofs(dh))
-
-    # Arrhenius reaction model (Da, γ, q, ε); see ArrheniusSrc/ArrheniusJac above.
-    src = ArrheniusSrc(0.1, 1.0, 1.0, 1e-3)
+    # Arrhenius term and Jac 
+    src = ArrheniusSrc(0.1, 1.0, 1.0, 1e-3) # (Da, γ, q, T_floor)
     srcJac = ArrheniusJac(0.1, 1.0, 1.0, 1e-3)
 
-    # Initial condition
-    y = zeros(ndofs(dh), N)
-
-    cache = SolverCache(L_fact, A, R, J, Jr, fact, Je, re, fr, f_in, y, temp1, temp2, temp3, dh, cv, Δt, N, src, srcJac, τ_in)
-    return cache
+    return ProblemCache(M, K, Jr, r, Jre, re, f_in, dh, cv, src, srcJac, τ_in)
 end
 
 function main()
-    cache = setup_cache()
-    cn_solve!(cache, y -> react!(cache, y), newton!) # or quasi_newton!
-    write_vtk("tests/results/ADR_DG/ADR_DG", cache)
+    # Time-stepping
+    tf = 2.5
+    Δt = 0.01
+    N = round(Int64, tf / Δt) + 1
+
+    # Structs
+    prob = setup_problem(tf)
+    intg_cache = CNCache(prob, Δt, N) # swap for different integrator
+
+    # Solve and write 
+    cn_solve!(intg_cache, y -> react!(prob, y), (b, t) -> (@. b = prob.τ(t) * prob.f_in), newton!) # or quasi_newton!
+    write_vtk("apps/forward_solvers/results/ADR_DG/ADR_DG", intg_cache)
 end

@@ -1,4 +1,7 @@
 # Simulation results
 tests/results/
+apps/forward_solvers/results/
 *.vtu
 *.pvd
+*.vtr
+todo.md

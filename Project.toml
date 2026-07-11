@@ -1,12 +1,20 @@
 name = "PDEOpt"
 uuid = "fd37fd2c-7a97-4c71-b539-a50472a13087"
-authors = ["Lorenzo Gambichler <l.gambichler@gmail.com>"]
 version = "0.1.0"
+authors = ["Lorenzo Gambichler <l.gambichler@gmail.com>"]
 
 [deps]
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
+OrdinaryDiffEqSDIRK = "2d112036-d095-4a1e-ab9a-08536f3ecdbf"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 ProtoStructs = "437b6fc4-8e8e-11e9-3fa1-ad391e66c018"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
+
+[compat]
+OrdinaryDiffEq = "7.1.1"
+OrdinaryDiffEqSDIRK = "2.7.1"
+Printf = "1.11.0"

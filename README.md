@@ -20,3 +20,10 @@ Upwinding DG SIPG FEM advection-diffusion-reaction (ADR) solver
 - assemble_mass!, cn_step_nonlinear!
 - Newton
 - M
+
+**ODE**
+- $M\dot{y} + Ky = r(y) + b(u)$
+- Crank-Nicolson time-stepping
+- $Ay_{k+1} = By_k + \frac{\Delta t}{2}(r(y_{k+1}) + r(y_k)) + \frac{\Delta t}{2}(b(u_{k+1}) + b(u_k))$
+- $A = (M + \frac{\Delta t}{2}K)$, $B = (M - \frac{\Delta t}{2}K)$
+- Newton, Quasi-Newton, Frozen Newton (reuse factorization over multiple steps)
