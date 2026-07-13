@@ -2,7 +2,8 @@ module PDEOpt
 
 include("mesh/structured_grid.jl")
 include("properties/properties.jl")
-include("models/adr.jl")
+include("models/models.jl")
+include("problem/problem.jl")
 include("assembly/assemble_dg.jl")
 include("assembly/assemble_fvm.jl")
 include("solvers/nonlinear.jl")
@@ -11,6 +12,7 @@ include("timestepping/crank_nicolson.jl")
 using .StructuredMesh
 using .Properties
 using .Models
+using .Problem
 using .AssembleDG
 using .AssembleFVM
 using .NonlinearSolvers
@@ -28,8 +30,14 @@ export StructuredGrid, ncells, cellindex, cellij,
     DofMap, ndof, fieldindex, dof, celldof, fielddof, sparsity_pattern
 
 # Physics models
-export AbstractModel, ADRModel, PSAModel, Reaction, Arrhenius, LHHW, AdsorptionLDF,
-    TDependentD, inlet_mod
+export AbstractModel, PlugFlowModel, PSAModel, MethanationModel, MethanationProps,
+    Reaction, Arrhenius, AdsorptionLDF,
+    fields, transported, state_dependent, diffusivity, velocity, nspecies,
+    reaction!, reaction_jac!, reaction_jac_fd!, properties!,
+    inlet_value, wall_coeff, wall_field, inlet_mod, wall_mod
+
+# Assembled-problem container
+export ProblemCache
 
 # FVM assembly
 export advection_flux, diffusion_flux,

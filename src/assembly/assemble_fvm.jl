@@ -3,6 +3,7 @@ module AssembleFVM
 using SparseArrays
 using ..StructuredMesh
 using ..Models
+using ..Problem
 
 export advection_flux, diffusion_flux,
     assemble_global, assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
@@ -15,9 +16,11 @@ end
 
 diffusion_flux(Df::Real, area::Real, dist::Real) = Df * area / dist
 
-# Global transport assembly: 
+#=
+
+# Global transport/mass assembly: 
 # Mass M, stiffness K (diffusion + advection)
-function assemble_global(M::AbstractSparseMatrix, K::AbstractSparseMatrix,
+function assemble_global!(M::AbstractSparseMatrix, K::AbstractSparseMatrix,
     dirs::NTuple{N,Tuple{FaceSet,FaceGeometry}}, grid::StructuredGrid, geom::Geometry,
     dm::DofMap, model::AbstractModel) where {N}
     # Cell loop
@@ -59,7 +62,6 @@ function assemble_global(M::AbstractSparseMatrix, K::AbstractSparseMatrix,
             end
         end
     end
-    return M, K
 end
 
 # Per-step transport reassembly for state-dependent coefficients 
@@ -95,6 +97,19 @@ function assemble_transport!(prob::ProblemCache, y::AbstractVector,
         end
     end               
 
+end
+
+=#
+
+# Constant mass/volume matrix assembly 
+function assemble_mass!(M::AbstractSparseMatrix, grid::StructuredGrid, geom::Geometry, dm::DofMap)
+    for fi in eachindex(dm.fields)
+        for c = 1:ncells(grid)
+            cdof = dof(dm, c, fi)
+            i, j = cellij(grid, c)
+            M[cdof, cdof] = cellvolume(geom, i, j) # Cell volume on diag
+        end
+    end
 end
 
 # Weak Dirichlet or Danckwerts: Axial flux J_ax = βC - D_ax⋅∂_zC

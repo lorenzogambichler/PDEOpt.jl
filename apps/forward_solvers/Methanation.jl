@@ -3,22 +3,7 @@ using SparseArrays
 using WriteVTK
 using PDEOpt
 
-# Discretization cache: 
-# operators, mesh, physics model
-struct ProblemCache{Tgrid, Tgeom, Tdm, Tmodel}
-    M::SparseMatrixCSC{Float64,Int}
-    K::SparseMatrixCSC{Float64,Int}
-    Jr::SparseMatrixCSC{Float64,Int} 
-    r::Vector{Float64} # global reaction source
-    re::Vector{Float64} # local reaction source 
-    Jre::Matrix{Float64}
-    f_in::Vector{Float64} # inlet forcing
-    f_wall::Vector{Float64} # wall forcing
-    grid::Tgrid
-    geom::Tgeom
-    dm::Tdm
-    model::Tmodel # AbstractModel
-end
+# TODO (unfinished stub)
 
 function write_vtk(path::String, cache::CNCache)
     prob = cache.prob

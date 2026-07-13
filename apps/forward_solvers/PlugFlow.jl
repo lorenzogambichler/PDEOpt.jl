@@ -3,23 +3,6 @@ using SparseArrays
 using WriteVTK
 using PDEOpt
 
-# Discretization cache: 
-# operators, mesh, physics model
-struct ProblemCache{Tgrid, Tgeom, Tdm, Tmodel}
-    M::SparseMatrixCSC{Float64,Int}
-    K::SparseMatrixCSC{Float64,Int}
-    Jr::SparseMatrixCSC{Float64,Int} 
-    r::Vector{Float64} # global reaction source
-    re::Vector{Float64} # local reaction source 
-    Jre::Matrix{Float64}
-    f_in::Vector{Float64} # inlet forcing
-    f_wall::Vector{Float64} # wall forcing
-    grid::Tgrid
-    geom::Tgeom
-    dm::Tdm
-    model::Tmodel # AbstractModel
-end
-
 function write_vtk(path::String, cache::CNCache)
     prob = cache.prob
     grid = prob.grid
@@ -51,7 +34,7 @@ function set_ic!(cache::CNCache)
     return cache
 end
 
-function setup_problem(tf::Float64)
+function setup_problem()
     # StructuredGrid, Geometry
     L, R = 2.0, 0.5
     nz, nr = 100, 25
@@ -95,7 +78,7 @@ function setup_problem(tf::Float64)
 
     # Model
     react = Arrhenius(k0, Ea, ΔHr, T_floor)
-    model = ADRModel(fields, D, β, react, U, T_wall, g, y_in)
+    model = PlugFlowModel(fields, D, β, react, U, T_wall, g, y_in)
 
     # Matrices, shared pattern
     K = sparsity_pattern(grid, dm)
@@ -126,7 +109,7 @@ function main()
     N = round(Int, tf / Δt) + 1
 
     # Caches
-    prob = setup_problem(tf)
+    prob = setup_problem()
     cache = CNCache(prob, Δt, N)
 
     # IC
@@ -134,7 +117,6 @@ function main()
     
     # Solve and write results
     @time cn_solve!(cache, (y, WithJac) -> assemble_react!(prob, y, WithJac),
-        (b, t) -> assemble_boundary!(prob, b, t), y -> assemble_transport!(prob, y), 
-        shamanskii()) # newton!, chord!, shamanskii()
+        (b, t) -> assemble_boundary!(prob, b, t), shamanskii()) # newton!, chord!, shamanskii()
     write_vtk("apps/forward_solvers/results/PlugFlow/PlugFlow", cache)
 end

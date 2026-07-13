@@ -16,7 +16,7 @@ function newton!(x, residual!, jacobian!, linsolve!, F, s; maxiter::Int=30, tol:
     return x
 end
 
-# Quasi-Newton
+# Chord method
 # Factorize jac once at the initial guess and reuse it over the time step
 # Refactorize jac every time step
 function chord!(x, residual!, jacobian!, linsolve!, F, s; maxiter::Int=30, tol::Float64=1e-8)
