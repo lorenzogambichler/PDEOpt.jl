@@ -27,3 +27,11 @@ Upwinding DG SIPG FEM advection-diffusion-reaction (ADR) solver
 - $Ay_{k+1} = By_k + \frac{\Delta t}{2}(r(y_{k+1}) + r(y_k)) + \frac{\Delta t}{2}(b(u_{k+1}) + b(u_k))$
 - $A = (M + \frac{\Delta t}{2}K)$, $B = (M - \frac{\Delta t}{2}K)$
 - Newton, Quasi-Newton, Frozen Newton (reuse factorization over multiple steps)
+
+**Structure**
+- src/assembly/: local kernels, global scatter loops
+- src/mesh/: Structured mesh helper functions, mesh refinement
+- src/models/: Problem-dependent physics
+- apps/: Driver scripts
+- src/timestepping/: ODE solvers
+- src/solvers/: Nonlinear Solvers (Newton)

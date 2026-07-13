@@ -2,7 +2,7 @@ module NonlinearSolvers
 
 using LinearAlgebra
 
-export newton!, quasi_newton!, frozen_newton
+export newton!, chord!, shamanskii
 
 # Newton (solve F(x) = 0)
 function newton!(x, residual!, jacobian!, linsolve!, F, s; maxiter::Int=30, tol::Float64=1e-8)
@@ -19,7 +19,7 @@ end
 # Quasi-Newton
 # Factorize jac once at the initial guess and reuse it over the time step
 # Refactorize jac every time step
-function quasi_newton!(x, residual!, jacobian!, linsolve!, F, s; maxiter::Int=30, tol::Float64=1e-8)
+function chord!(x, residual!, jacobian!, linsolve!, F, s; maxiter::Int=30, tol::Float64=1e-8)
     for it = 1:maxiter
         residual!(F, x)
         norm(F) < tol && break
@@ -30,31 +30,39 @@ function quasi_newton!(x, residual!, jacobian!, linsolve!, F, s; maxiter::Int=30
     return x
 end
 
-# Frozen-Jacobian Newton
-# Reuse one factorization across time-steps 
-# Refactorize jac every refactor_every steps or after convergence failure (no accuracy loss)
+# Frozen-Jacobian Newton (Shamanskii)
+# Reuse one factorization across time-steps
+# Refactorize jac every refactor_every steps OR mid-step if r/rprev ≥ slow
 # Use functor for persistent state
-mutable struct frozen_newton
+mutable struct shamanskii
     refactor_every::Int 
+    slow::Float64 # contractoin rate threshold
     since::Int 
 end
-frozen_newton(; refactor_every::Int=10) = frozen_newton(refactor_every, refactor_every)
+shamanskii(; refactor_every::Int=10, slow::Float64=0.5) =
+    shamanskii(refactor_every, slow, refactor_every)
 
-function (fn::frozen_newton)(x, residual!, jacobian!, linsolve!, F, s;
+function (sh::shamanskii)(x, residual!, jacobian!, linsolve!, F, s;
     maxiter::Int=30, tol::Float64=1e-8)
-    refresh = fn.since ≥ fn.refactor_every # refactorize if true
+    refresh = sh.since ≥ sh.refactor_every # scheduled refactor due at step entry?
+    refreshed = false # already refactored during this step?
     converged = false
-    for it = 1:maxiter
+    rprev = Inf
+    for _ = 1:maxiter
         residual!(F, x)
-        norm(F) < tol && (converged = true; break)
-        if it == 1 && refresh
-            jacobian!(x) # refactorize
-            fn.since = 0
+        r = norm(F)
+        r < tol && (converged = true; break)
+        # Refactor if scheduled, or if frozen J is stalling (slow contraction)
+        if !refreshed && (refresh || r > sh.slow * rprev)
+            jacobian!(x) # refactorize and retry 
+            sh.since = 0
+            refreshed = true
         end
+        rprev = r
         linsolve!(s, F)
         @. x -= s
     end
-    fn.since = converged ? fn.since + 1 : fn.refactor_every # stalled -> force refactorization next step
+    sh.since = converged ? sh.since + 1 : sh.refactor_every # stalled -> force refactor next step
     return x
 end
 

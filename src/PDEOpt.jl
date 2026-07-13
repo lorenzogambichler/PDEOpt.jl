@@ -1,12 +1,16 @@
 module PDEOpt
 
 include("mesh/structured_grid.jl")
+include("properties/properties.jl")
+include("models/adr.jl")
 include("assembly/assemble_dg.jl")
 include("assembly/assemble_fvm.jl")
 include("solvers/nonlinear.jl")
-include("ode_solvers/crank_nicolson.jl")
+include("timestepping/crank_nicolson.jl")
 
 using .StructuredMesh
+using .Properties
+using .Models
 using .AssembleDG
 using .AssembleFVM
 using .NonlinearSolvers
@@ -23,11 +27,17 @@ export StructuredGrid, ncells, cellindex, cellij,
     Geometry, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry,
     DofMap, ndof, fieldindex, dof, celldof, fielddof, sparsity_pattern
 
+# Physics models
+export AbstractModel, ADRModel, PSAModel, Reaction, Arrhenius, LHHW, AdsorptionLDF,
+    TDependentD, inlet_mod
+
 # FVM assembly
-export advection_flux, diffusion_flux, reaction!
+export advection_flux, diffusion_flux,
+    assemble_global, assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
+    assemble_react!, assemble_boundary!
 
 # Nonlinear solvers
-export newton!, quasi_newton!, FrozenNewton
+export newton!, chord!, shamanskii
 
 # ODE solvers
 export cn_solve!, CNCache

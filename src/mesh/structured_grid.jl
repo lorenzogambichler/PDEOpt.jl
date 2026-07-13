@@ -1,16 +1,14 @@
 module StructuredMesh
 
 using SparseArrays
-# using ExtendableGrids.jl # for unstructured grids
 
-# Implements basic tensor product grid
-# - Connectivity
-# - Geometry
-# - Dof map (for multiple fields)
-# - Sparsity pattern 
-
-##########################################################################################
+# Implements basic tensor product grid:
 # Connectivity
+# Geometry
+# Dof map (for multiple fields)
+# Sparsity pattern 
+
+## Connectivity
 
 export StructuredGrid, ncells, cellindex, cellij,
     FaceSet, interior_faces, BoundaryFaceSet, boundary_faces
@@ -19,8 +17,8 @@ export StructuredGrid, ncells, cellindex, cellij,
 struct StructuredGrid
     z::Vector{Float64} # axial node coords (nz + 1)
     r::Vector{Float64} # radial node coords (nr + 1) 
-    nz::Int64 # ncells axial 
-    nr::Int64 # ncells radial 
+    nz::Int # ncells axial 
+    nr::Int # ncells radial 
 end
 
 # For non-uniform grid (refinement), call StrcutredGrid with custom node vectors
@@ -91,8 +89,7 @@ function boundary_faces(g::StructuredGrid)
     return (; inlet, outlet, center, wall) # named tuple
 end
 
-############################################################################################
-# Geometry
+## Geometry
 
 export Geometry, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry
 
@@ -175,8 +172,7 @@ function BoundaryFaceGeometry(g::StructuredGrid, geom::Geometry, bf::BoundaryFac
     return BoundaryFaceGeometry(area, dist)
 end
 
-############################################################################################
-# DOF map (multi-field)
+## DOF map (multi-field)
 
 export DofMap, ndof, fieldindex, dof, celldof, fielddof
 
@@ -184,11 +180,10 @@ export DofMap, ndof, fieldindex, dof, celldof, fielddof
 # Every axial coord forms memory block (nr*nfields dofs) 
 # avoid ferrite names
 struct DofMap{N}
-    fields::NTuple{N,Symbol} # e.g. (:C, :T)
     ncells::Int
+    fields::NTuple{N,Symbol} # e.g. (:C, :T)
 end
-
-DofMap(ncells::Int, fields::Symbol...) = DofMap(fields, ncells)
+DofMap(ncells::Int, fields::Symbol...) = DofMap(ncells, fields) 
 
 ndof(dm::DofMap{N}) where {N} = N * dm.ncells
 
@@ -211,8 +206,7 @@ celldof(dm::DofMap{N}, cell::Int) where {N} = ((cell - 1) * N + 1):(cell * N)
 fielddof(dm::DofMap{N}, field::Symbol) where {N} = fieldindex(dm, field):N:ndof(dm)
 # e.g. 1:2:19 for feilddof(dm, :C)
 
-############################################################################################
-# Sparsity pattern
+## Sparsity pattern
 
 export sparsity_pattern
 

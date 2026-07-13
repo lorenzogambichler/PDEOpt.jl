@@ -5,6 +5,13 @@ using SparseArrays
 
 export cn_solve!, CNCache
 
+mutable struct CNStats
+    nf::Int # function evals (residual calls)
+    nfact::Int # factorizations
+end
+CNStats() = CNStats(0, 0)
+reset!(s::CNStats) = (s.nf = 0; s.nfact = 0; s)
+
 # Crank–Nicolson state for given ProblemCache
 struct CNCache{TP,Tfact}
     prob::TP # ProblemCache
@@ -18,10 +25,12 @@ struct CNCache{TP,Tfact}
     temp3::Vector{Float64}
     b::Vector{Float64} # boundary forcing vector
     Δt::Float64
-    N::Int64
+    N::Int
+    stats::CNStats
 end
 
-function CNCache(prob, Δt::Float64, N::Int64)
+function CNCache(prob, Δt::Float64, N::Int)
+    stats = CNStats()
     A = copy(prob.K)
     B = copy(prob.K)
     @. A.nzval = prob.M.nzval + 0.5 * Δt * prob.K.nzval # implicit
@@ -30,14 +39,15 @@ function CNCache(prob, Δt::Float64, N::Int64)
     fact = lu(J)
     n = size(A, 1)
     y = zeros(n, N)
-    return CNCache(prob, A, B, J, fact, y, zeros(n), zeros(n), zeros(n), zeros(n), Δt, N)
+    return CNCache(prob, A, B, J, fact, y, zeros(n), zeros(n), zeros(n), zeros(n), Δt, N, stats)
 end
 
 # Crank–Nicolson for  M ẏ + K y = r(y) + b(t)
 # react!(x) assembles reaction (prob.r, prob.Jr)
 # boundary!(b, t) fills boundary forcing vector b(t) at t 
-# solve! either quasi-Newton or Newton
+# solve!, see solvers/nonlinear.jl
 function cn_solve!(cache::CNCache, react!, boundary!, solve!; maxiter::Int=30, tol::Float64=1e-8)
+    reset!(cache.stats) # reset stats (for consecutive solves)
     A, B, Δt, b = cache.A, cache.B, cache.Δt, cache.b
     prob = cache.prob
     h, F, s = cache.temp1, cache.temp2, cache.temp3
@@ -48,24 +58,25 @@ function cn_solve!(cache::CNCache, react!, boundary!, solve!; maxiter::Int=30, t
     # B = M - Δt/2⋅K
 
     function residual!(F, ykp1) 
-        react!(ykp1)
+        react!(ykp1, Val(false)) # r(ykp1)
         mul!(F, A, ykp1)
         @. F += -0.5 * Δt * prob.r + h
+        cache.stats.nf += 1
     end
-    # jacobian! uses prob.Jr (already assembled by residual!)
-    # -> residual! needs to be called before jacobian!
-    function jacobian!(_)
+    function jacobian!(ykp1)
+        react!(ykp1, Val(true)) # (r(ykp1), Jr(ykp1))
         @. cache.J.nzval = A.nzval - 0.5 * Δt * prob.Jr.nzval
         lu!(cache.fact, cache.J)
+        cache.stats.nfact += 1
     end
-    linsolve!(s, Fi) = ldiv!(s, cache.fact, Fi)
+    linsolve!(s, F) = ldiv!(s, cache.fact, F)
 
     for k = 1:cache.N-1
         yk = view(cache.y, :, k)
         ykp1 = view(cache.y, :, k + 1)
 
         # h(yk) = -B·yk - (Δt/2)·r(yk) - (Δt/2)·(bk + bkp1) 
-        react!(yk) # assemble Jr, r
+        react!(yk, Val(false)) 
         mul!(h, B, yk)
         @. h = -h - 0.5 * Δt * prob.r
         boundary!(b, (k - 1) * Δt) 
