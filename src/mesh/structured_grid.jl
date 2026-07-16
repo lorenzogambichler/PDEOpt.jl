@@ -4,13 +4,13 @@ using SparseArrays
 
 # Stretched Cartesian:
 # - Connectivity
-# - Geometry
+# - Geometry2D
 # - Dof map (multiple fields)
 # - Sparsity pattern 
 
 # Connectivity
 export AbstractGrid, AbstractGeometry,
-    StructGrid2D, ncells, cellindex, cellij,
+    StructGrid2D, StructGrid1D, ncells, cellindex, cellij,
     FaceSet, interior_faces, BoundaryFaceSet, boundary_faces
 
 # Dispatch assembly on concrete types -> extendable to 1D grids
@@ -31,7 +31,18 @@ function StructGrid2D(Lz::Float64, Lr::Float64, nz::Int, nr::Int)
     return StructGrid2D(z, r, nz, nr)
 end
 
+struct StructGrid1D <: AbstractGrid
+    z::Vector{Float64}
+    nz::Int
+end
+
+function StructGrid1D(Lz::Float64, nz::Int)
+    z = collect(range(0.0, Lz; length = nz + 1))
+    return StructGrid1D(z, nz)
+end
+
 ncells(g::StructGrid2D) = g.nz * g.nr
+ncells(g::StructGrid1D) = g.nz
 
 # radial j varies fastest
 cellindex(g::StructGrid2D, i::Int, j::Int) = (i - 1) * g.nr + j
@@ -40,6 +51,8 @@ function cellij(g::StructGrid2D, c::Int)
     i, j = divrem(c - 1, g.nr)
     return (i + 1, j + 1)
 end
+
+cellij(::StructGrid1D, c::Int) = (c, 1)
 
 # Split faces by axis, axis determines normal
 struct FaceSet
@@ -55,7 +68,7 @@ function interior_faces(g::StructGrid2D)
     ao = Vector{Int}(undef, na)
     an = Vector{Int}(undef, na)
     k = 0
-    for i in 1:g.nz-1, j in 1:g.nr
+    for i = 1:g.nz-1, j = 1:g.nr
         k += 1
         ao[k] = cellindex(g, i, j)
         an[k] = cellindex(g, i + 1, j)
@@ -67,14 +80,27 @@ function interior_faces(g::StructGrid2D)
     ro = Vector{Int}(undef, nrd)
     rn = Vector{Int}(undef, nrd)
     k = 0
-    for i in 1:g.nz, j in 1:g.nr-1
+    for i = 1:g.nz, j = 1:g.nr-1
         k += 1
         ro[k] = cellindex(g, i, j)
         rn[k] = cellindex(g, i, j + 1)
     end
     radial = FaceSet(ro, rn, 2)
 
-    return axial, radial
+    return (axial, radial)
+end
+
+function interior_faces(g::StructGrid1D)
+    na = g.nz - 1
+    ao = Vector{Int}(undef, na)
+    an = Vector{Int}(undef, na)
+    for i = 1:g.nz-1
+        ao[i] = i
+        an[i] = i+1
+    end
+    axial = FaceSet(ao, an, 1)
+
+    return (axial,)
 end
 
 # Axis, side determine normal vector
@@ -92,10 +118,16 @@ function boundary_faces(g::StructGrid2D)
     return (; inlet, outlet, center, wall) # named tuple
 end
 
-# Geometry
-export Geometry, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry
+function boundary_faces(g::StructGrid1D)
+    inlet = BoundaryFaceSet([1], 1, -1)
+    outlet = BoundaryFaceSet([g.nz], 1, +1)
+    return (; inlet, outlet)
+end
 
-struct Geometry <: AbstractGeometry
+# Geometry
+export Geometry1D, Geometry2D, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry
+
+struct Geometry2D <: AbstractGeometry
     dz::Vector{Float64} # axial widths (nz)
     dr::Vector{Float64} # radial widths (nr)
     zc::Vector{Float64} # axial centroid (nz), midpoint
@@ -103,7 +135,7 @@ struct Geometry <: AbstractGeometry
     rbar::Vector{Float64} # arithmetic mid-radius (nr)
 end
 
-function Geometry(g::StructGrid2D)
+function Geometry2D(g::StructGrid2D)
     z = g.z
     r = g.r
     dz = diff(z)
@@ -111,11 +143,26 @@ function Geometry(g::StructGrid2D)
     zc = @. 0.5 * (z[1:end-1] + z[2:end])
     rbar = @. 0.5 * (r[1:end-1] + r[2:end])
     rc = @. rbar + dr^2 / (12.0 * rbar)
-    return Geometry(dz, dr, zc, rc, rbar)
+    return Geometry2D(dz, dr, zc, rc, rbar)
 end
 
-cellvolume(geom::Geometry, i::Int, j::Int) = geom.rbar[j] * geom.dr[j] * geom.dz[i]
-cellcentroid(geom::Geometry, i::Int, j::Int) = (geom.zc[i], geom.rc[j])
+struct Geometry1D <: AbstractGeometry
+    dz::Vector{Float64}
+    zc::Vector{Float64}
+    A::Float64 # default 1.0
+end
+
+function Geometry1D(g::StructGrid1D; A::Float64=1.0)
+    z = g.z
+    dz = diff(z)
+    zc = @. 0.5 * (z[1:end-1] + z[2:end])
+    return Geometry1D(dz, zc, A)
+end
+
+cellvolume(geom::Geometry2D, i::Int, j::Int) = geom.rbar[j] * geom.dr[j] * geom.dz[i]
+cellvolume(geom::Geometry1D, i::Int, j::Int) = geom.A * geom.dz[i]
+cellcentroid(geom::Geometry2D, i::Int, j::Int) = (geom.zc[i], geom.rc[j])
+cellcentroid(geom::Geometry1D, i::Int, j::Int) = (geom.zc[i], 0.0) 
 
 struct FaceGeometry
     area::Vector{Float64}
@@ -123,7 +170,7 @@ struct FaceGeometry
     wf::Vector{Float64} # interp weight for owner
 end
 
-function FaceGeometry(g::StructGrid2D, geom::Geometry, fs::FaceSet)
+function FaceGeometry(g::StructGrid2D, geom::Geometry2D, fs::FaceSet)
     n = length(fs.owner)
     area = Vector{Float64}(undef, n)
     dist = Vector{Float64}(undef, n)
@@ -149,12 +196,29 @@ function FaceGeometry(g::StructGrid2D, geom::Geometry, fs::FaceSet)
     return FaceGeometry(area, dist, wf)
 end
 
+function FaceGeometry(g::StructGrid1D, geom::Geometry1D, fs::FaceSet)
+    n = length(fs.owner)
+    area = Vector{Float64}(undef, n)
+    dist = Vector{Float64}(undef, n)
+    wf = Vector{Float64}(undef, n)
+    for f in 1:n
+        i, _ = cellij(g, fs.owner[f]) # axial only (fs.axis == 1)
+        # Axial face i, i+1
+        area[f] = geom.A
+        do_ = 0.5 * geom.dz[i] # owner centroid -> face
+        dn_ = 0.5 * geom.dz[i+1] # neighbor centroid -> face
+        dist[f] = geom.zc[i+1] - geom.zc[i]
+        wf[f] = dn_ / (do_ + dn_)
+    end
+    return FaceGeometry(area, dist, wf)
+end
+
 struct BoundaryFaceGeometry
     area::Vector{Float64}
     dist::Vector{Float64}
 end
 
-function BoundaryFaceGeometry(g::StructGrid2D, geom::Geometry, bf::BoundaryFaceSet)
+function BoundaryFaceGeometry(g::StructGrid2D, geom::Geometry2D, bf::BoundaryFaceSet)
     n = length(bf.cells)
     area = Vector{Float64}(undef, n)
     dist = Vector{Float64}(undef, n)
@@ -174,11 +238,23 @@ function BoundaryFaceGeometry(g::StructGrid2D, geom::Geometry, bf::BoundaryFaceS
     return BoundaryFaceGeometry(area, dist)
 end
 
+function BoundaryFaceGeometry(g::StructGrid1D, geom::Geometry1D, bf::BoundaryFaceSet)
+    n = length(bf.cells)
+    area = Vector{Float64}(undef, n)
+    dist = Vector{Float64}(undef, n)
+    for k in 1:n
+        i, _ = cellij(g, bf.cells[k]) # inlet/outlet only
+        area[k] = geom.A
+        dist[k] = 0.5 * geom.dz[i]
+    end
+    return BoundaryFaceGeometry(area, dist)
+end
+
 # DOF map (multi-field)
 export DofMap, ndof, fieldindex, dof, celldof, fielddof
 
 # Cell interleaved, e.g. (C1, T1, C2, T2, ...)
-# Every axial coord forms memory block (nr*nfields dofs) 
+# Every axial coord forms memory block (nr⋅nfields dofs) 
 # avoid ferrite names
 struct DofMap{N}
     ncells::Int
@@ -188,8 +264,7 @@ DofMap(ncells::Int, fields::Symbol...) = DofMap(ncells, fields)
 
 ndof(dm::DofMap{N}) where {N} = N * dm.ncells
 
-# all examples for fields dm = DofMap(10, :C, :T)
-
+# Examples for fields dm = DofMap(10, :C, :T)
 # local ordering index of field in cell
 fieldindex(dm::DofMap, field::Symbol) = findfirst(==(field), dm.fields)
 # e.g. 1 for :C , 2 for :T 
@@ -211,25 +286,25 @@ fielddof(dm::DofMap{N}, field::Symbol) where {N} = fieldindex(dm, field):N:ndof(
 export sparsity_pattern
 
 # for K, but use copy for diagonal M and Jr 
-function sparsity_pattern(g::StructGrid2D, dm::DofMap;
-    coupling::Union{Nothing,AbstractMatrix{Bool}}=nothing, # field coupling inside cell (reaction)
-    face_coupling::Union{Nothing,AbstractMatrix{Bool}}=nothing) # field coupling across faces (transport)
+function sparsity_pattern(g::AbstractGrid, dm::DofMap;
+    coupling::Union{Nothing,AbstractMatrix{Bool}}=nothing, # coupling inside cell (reaction)
+    face_coupling::Union{Nothing,AbstractMatrix{Bool}}=nothing) # coupling across faces (transport)
 
     nf = length(dm.fields)
     nc = dm.ncells
     n = ndof(dm)
-    coupling = isnothing(coupling) ? trues(nf, nf) : coupling # default is full coupling inside cell
+    coupling = isnothing(coupling) ? trues(nf, nf) : coupling # default -> full coupling inside cell
     face_coupling = (isnothing(face_coupling) ? 
-                    [a == b for a in 1:nf, b in 1:nf] : face_coupling) # default is only field coupling 
+                    [a == b for a in 1:nf, b in 1:nf] : face_coupling) # default -> only field coupling 
 
-    axial, radial = interior_faces(g)
-    nfaces = length(axial.owner) + length(radial.owner)
+    face_dirs = interior_faces(g) # (axial, radial) or (axial,)
+    nfaces = sum(length(fs.owner) for fs in face_dirs)
     nnz_max = nc * count(coupling) + nfaces * count(face_coupling) * 2
     I = Vector{Int}(undef, nnz_max)
     J = Vector{Int}(undef, nnz_max)
     k = 0
 
-    # within-cell field coupling (reaction block + all diagonals)
+    # reaction -> within cell
     for c in 1:nc
         for fb in 1:nf, fa in 1:nf
             coupling[fa, fb] || continue
@@ -239,8 +314,8 @@ function sparsity_pattern(g::StructGrid2D, dm::DofMap;
         end
     end
 
-    # across-face coupling (transport), same-field by default, both directions
-    for fs in (axial, radial)
+    # transport -> across faces
+    for fs in face_dirs
         for e in 1:length(fs.owner)
             o = fs.owner[e]
             nb = fs.neighbor[e]
@@ -258,7 +333,7 @@ function sparsity_pattern(g::StructGrid2D, dm::DofMap;
         end
     end
 
-    # build with nonzeros, then zero 
+    # build with nonzeros then zero 
     S = sparse(view(I, 1:k), view(J, 1:k), ones(k), n, n)
     fill!(nonzeros(S), 0.0)
     return S

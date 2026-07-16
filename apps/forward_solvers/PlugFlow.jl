@@ -41,7 +41,7 @@ function setup_problem()
     geom = Geometry(grid)
 
     # FaceSets, FaceGeometries
-    fs_axial, fs_radial = interior_faces(grid)
+    (fs_axial, fs_radial) = interior_faces(grid)
     fg_axial = FaceGeometry(grid, geom, fs_axial)
     fg_radial = FaceGeometry(grid, geom, fs_radial)
 

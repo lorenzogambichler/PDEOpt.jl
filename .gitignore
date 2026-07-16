@@ -1,4 +1,3 @@
-# Simulation results
 tests/results/
 apps/forward_solvers/results/
 *.vtu
@@ -6,3 +5,4 @@ apps/forward_solvers/results/
 *.vtr
 
 CLAUDE.md
+TODO.md
