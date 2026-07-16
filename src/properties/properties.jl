@@ -1,7 +1,7 @@
 module Properties
 
 include("diffusion.jl")
-include("viscosity.jl") # defines wilke_phi, used by conductivity.jl
+include("viscosity.jl")
 include("conductivity.jl")
 include("heat_capacity.jl")
 include("ergun.jl")
@@ -10,7 +10,7 @@ include("isotherms.jl")
 
 export 
     # diffusion
-    fuller_Dij, mixture_D, tsotsas_Deff,
+    fuller_Dij, fuller_factor, mixture_D, tsotsas_Deff,
     # viscosity 
     wilke_phi, mix_viscosity,
     # conductivity
@@ -23,5 +23,4 @@ export
     Keq1, Keq2, Keq3,
     # isotherms
     langmuir
-
 end

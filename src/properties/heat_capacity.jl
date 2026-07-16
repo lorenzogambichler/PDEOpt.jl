@@ -1,9 +1,6 @@
-# Heat capacity correlations
-# cp_α(T) from VDI polynomial held on the model (MethanationModel, Poly)
-# Here -> mixing rule, effective volumetric capacity 
+# Heat capacity
 
-# cp,gas = Σ(ρ_α/ρ)cpα in J/(kg K)
-# ρα mass concentrations in kg/m³, cpα in J/(kg K), ρ = Σρα
+# cp,gas = Σ(ρ_α/ρ)cpα in J/(kg K), ρ = Σρα
 function mix_cp(ρα, cpα, ρ, nsp::Int)
     s = 0.0
     @inbounds for α in 1:nsp

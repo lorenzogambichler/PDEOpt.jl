@@ -1,5 +1,5 @@
-# Reaction equilibrium constants for Xu–Froment
-# Xu–Froment (1989), T in K
+# Reaction equilibrium const for Xu–Froment
+# Xu–Froment, T in K
 # R1: CH4 + H2O <-> CO + 3*H2, K1 in bar²
 # R2: CO + H2O <-> CO2 + H2, K2 in -
 # R3: CH4 + 2*H2O <-> CO2 + 4*H2, K3 = K1·K2 in bar²

@@ -1,8 +1,3 @@
-# Reuse whole semidiscrete stack, only model layer differs.
-
-# loading: dq_i/dt = k_i·(q*_i(C,T) - q_i)
-# gas: source_i = -(1-ε)·ρ_s·dq_i/dt
-# q*_i from isotherm (properties.jl, e.g. langmuir)
 struct AdsorptionLDF <: Reaction
     # TODO: LDF coefficients k_i, isotherm params, ε, ρ_s
 end
@@ -21,6 +16,6 @@ fields(m::PSAModel) = (m.gas..., m.loading...)
 transported(m::PSAModel, f::Int) = f ≤ length(m.gas)
 
 reaction!(m::PSAModel, re, yc) = reaction!(m.ads, re, yc)
-reaction_jac!(m::PSAModel, Jre, yc) = reaction_jac!(m.ads, Jre, yc)
+reaction_jac!(m::PSAModel, Jre, yc, fbase, fpert, ypert) = reaction_jac!(m.ads, Jre, yc)
 
 # TODO: diffusivity, velocity, inlet/wall BC methods (reuse ADR kernels)

@@ -19,6 +19,12 @@ struct ProblemCache{Tgrid, Tgeom, Tdm, Tmodel<:AbstractModel}
     geom::Tgeom
     dm::Tdm
     model::Tmodel # AbstractModel
+    re0::Vector{Float64} # reaction jac finite diff
+    yscr::Vector{Float64} # scratch
 end
+
+ProblemCache(M, K, Jr, r, re, Jre, f_in, f_wall, grid, geom, dm, model) =
+    ProblemCache(M, K, Jr, r, re, Jre, f_in, f_wall, grid, geom, dm, model,
+        similar(re), similar(re))
 
 end

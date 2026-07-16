@@ -6,7 +6,7 @@ using SparseArrays
 export cn_solve!, CNCache
 
 mutable struct CNStats
-    nf::Int # function evals (residual calls)
+    nf::Int # function (residual) evals
     nfact::Int # factorizations
 end
 CNStats() = CNStats(0, 0)
@@ -42,12 +42,10 @@ function CNCache(prob, Δt::Float64, N::Int)
     return CNCache(prob, A, B, J, fact, y, zeros(n), zeros(n), zeros(n), zeros(n), Δt, N, stats)
 end
 
-# Crank–Nicolson for  M ẏ + K y = r(y) + b(t)
-# react!(x) assembles reaction (prob.r, prob.Jr)
-# boundary!(b, t) fills boundary forcing vector b(t) at t 
-# solve!, see solvers/nonlinear.jl
-function cn_solve!(cache::CNCache, react!, boundary!, solve!; maxiter::Int=30, tol::Float64=1e-8)
-    reset!(cache.stats) # reset stats (for consecutive solves)
+# M ẏ + K y = r(y) + b(t)
+function cn_solve!(cache::CNCache, react!, boundary!, solve!;
+    reassemble! = nothing, maxiter::Int=30, tol::Float64=1e-8)
+    reset!(cache.stats) # reset stats
     A, B, Δt, b = cache.A, cache.B, cache.Δt, cache.b
     prob = cache.prob
     h, F, s = cache.temp1, cache.temp2, cache.temp3
@@ -70,12 +68,27 @@ function cn_solve!(cache::CNCache, react!, boundary!, solve!; maxiter::Int=30, t
         cache.stats.nfact += 1
     end
     linsolve!(s, F) = ldiv!(s, cache.fact, F)
+    ypred = similar(cache.temp1) 
 
     for k = 1:cache.N-1
         yk = view(cache.y, :, k)
         ykp1 = view(cache.y, :, k + 1)
 
-        # h(yk) = -B·yk - (Δt/2)·r(yk) - (Δt/2)·(bk + bkp1) 
+        # State-dependent -> freeze M, K at the CN midpoint y_{k+1/2}
+        # 2nd order extrapolation ỹ = (3yk - ykm1)/2, rebuild A, B
+        if reassemble! !== nothing
+            if k == 1
+                reassemble!(yk)
+            else
+                ykm1 = view(cache.y, :, k - 1)
+                @. ypred = 1.5 * yk - 0.5 * ykm1
+                reassemble!(ypred)
+            end
+            @. A.nzval = prob.M.nzval + 0.5 * Δt * prob.K.nzval
+            @. B.nzval = prob.M.nzval - 0.5 * Δt * prob.K.nzval
+        end
+
+        # h(yk) = -B·yk - (Δt/2)·r(yk) - (Δt/2)·(bk + bkp1)
         react!(yk, Val(false)) 
         mul!(h, B, yk)
         @. h = -h - 0.5 * Δt * prob.r

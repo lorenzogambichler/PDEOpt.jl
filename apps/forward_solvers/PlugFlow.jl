@@ -24,8 +24,7 @@ function write_vtk(path::String, cache::CNCache)
     end
 end
 
-# Initial condition: 
-# Constant at inlet value at t=0
+# IC
 function set_ic!(cache::CNCache)
     prob = cache.prob
     for field in prob.dm.fields
@@ -35,10 +34,10 @@ function set_ic!(cache::CNCache)
 end
 
 function setup_problem()
-    # StructuredGrid, Geometry
+    # StructGrid2D, Geometry
     L, R = 2.0, 0.5
     nz, nr = 100, 25
-    grid = StructuredGrid(L, R, nz, nr)
+    grid = StructGrid2D(L, R, nz, nr)
     geom = Geometry(grid)
 
     # FaceSets, FaceGeometries
@@ -88,7 +87,8 @@ function setup_problem()
     # Assembly 
     f_in = zeros(ndof(dm))
     f_wall = zeros(ndof(dm))
-    assemble_global(M, K, ((fs_axial,fg_axial),(fs_radial,fg_radial)), grid, geom, dm, model)
+    assemble_mass!(M, grid, geom, dm)
+    assemble_transport!(K, ((fs_axial,fg_axial),(fs_radial,fg_radial)), dm, model)
     assemble_inlet_outlet!(K, f_in, dm, geom, grid, model,
         (bfs.inlet, bfg_inlet), (bfs.outlet, bfg_outlet))
     assemble_wall!(K, f_wall, dm, model, bfs.wall, bfg_wall)

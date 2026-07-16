@@ -2,6 +2,7 @@ module AssembleDG
 
 using Ferrite
 using LinearAlgebra
+import ..assemble_mass!   # shared generic owned by PDEOpt; this adds the element-local method
 
 export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advection!,
     assemble_advection_interface!, assemble_advection_boundary!, assemble_inflow!,

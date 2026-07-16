@@ -1,5 +1,3 @@
-# Arrhenius reaction -----------------------------------------------------------------------------------
-
 # first order, T_floor gurad for low T
 struct Arrhenius <: Reaction
     k0::Float64 # 1/s
@@ -26,8 +24,6 @@ function reaction_jac!(react::Arrhenius, Jre, yc)
     return Jre
 end
 
-# Plug-flow model -----------------------------------------------------------------------------------------
-
 # Advection-diffusion-reaction with constant transport
 struct PlugFlowModel{TF, TD, TR, F1, F2, F3} <: AbstractModel
     fields::TF
@@ -46,7 +42,7 @@ end
 
 fields(m::PlugFlowModel) = m.fields
 
-# Constant transport -> assemble once (state_dependent = false, default)
+# Constant transport -> assemble once (state_dependent = false)
 diffusivity(m::PlugFlowModel, f::Int, axis::Int) = m.D[f, axis]
 velocity(m::PlugFlowModel, axis::Int) = m.β[axis]
 
@@ -58,4 +54,5 @@ inlet_mod(m::PlugFlowModel, field::Symbol, t::Real) = m.y_in[field](t)
 wall_mod(m::PlugFlowModel, t::Real) = m.T_wall(t)
 
 reaction!(m::PlugFlowModel, re, yc) = reaction!(m.react, re, yc)
-reaction_jac!(m::PlugFlowModel, Jre, yc) = reaction_jac!(m.react, Jre, yc)
+# analytic jac -> ignore the finite diff args
+reaction_jac!(m::PlugFlowModel, Jre, yc, fbase, fpert, ypert) = reaction_jac!(m.react, Jre, yc)

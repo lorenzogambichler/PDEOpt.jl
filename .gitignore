@@ -4,3 +4,5 @@ apps/forward_solvers/results/
 *.vtu
 *.pvd
 *.vtr
+
+CLAUDE.md

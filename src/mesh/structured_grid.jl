@@ -2,38 +2,41 @@ module StructuredMesh
 
 using SparseArrays
 
-# Implements basic tensor product grid:
+# Stretched Cartesian:
+# - Connectivity
+# - Geometry
+# - Dof map (multiple fields)
+# - Sparsity pattern 
+
 # Connectivity
-# Geometry
-# Dof map (for multiple fields)
-# Sparsity pattern 
-
-## Connectivity
-
-export StructuredGrid, ncells, cellindex, cellij,
+export AbstractGrid, AbstractGeometry,
+    StructGrid2D, ncells, cellindex, cellij,
     FaceSet, interior_faces, BoundaryFaceSet, boundary_faces
 
+# Dispatch assembly on concrete types -> extendable to 1D grids
+abstract type AbstractGrid end
+abstract type AbstractGeometry end
 
-struct StructuredGrid
+struct StructGrid2D <: AbstractGrid
     z::Vector{Float64} # axial node coords (nz + 1)
-    r::Vector{Float64} # radial node coords (nr + 1) 
-    nz::Int # ncells axial 
-    nr::Int # ncells radial 
+    r::Vector{Float64} # radial node coords (nr + 1)
+    nz::Int # ncells axial
+    nr::Int # ncells radial
 end
 
-# For non-uniform grid (refinement), call StrcutredGrid with custom node vectors
-function StructuredGrid(Lz::Float64, Lr::Float64, nz::Int, nr::Int)
-    z = collect(range(0.0, Lz; length = nz + 1)) # axial node vector
+function StructGrid2D(Lz::Float64, Lr::Float64, nz::Int, nr::Int)
+    #z = collect(range(0.0, Lz; length = nz + 1)) # axial node vector
+    z = Lz .* range(0.0, 1.0; length = nz + 1).^2
     r = collect(range(0.0, Lr; length = nr + 1)) # radial node vector
-    return StructuredGrid(z, r, nz, nr)
+    return StructGrid2D(z, r, nz, nr)
 end
 
-ncells(g::StructuredGrid) = g.nz * g.nr
+ncells(g::StructGrid2D) = g.nz * g.nr
 
 # radial j varies fastest
-cellindex(g::StructuredGrid, i::Int, j::Int) = (i - 1) * g.nr + j
+cellindex(g::StructGrid2D, i::Int, j::Int) = (i - 1) * g.nr + j
 
-function cellij(g::StructuredGrid, c::Int)
+function cellij(g::StructGrid2D, c::Int)
     i, j = divrem(c - 1, g.nr)
     return (i + 1, j + 1)
 end
@@ -46,7 +49,7 @@ struct FaceSet
 end
 
 # +flux -> owner, −flux -> neighbor 
-function interior_faces(g::StructuredGrid)
+function interior_faces(g::StructGrid2D)
     # Axial faces, between (i, j) and (i+1, j), i = 1:nz-1, ∀j.
     na = (g.nz - 1) * g.nr
     ao = Vector{Int}(undef, na)
@@ -81,7 +84,7 @@ struct BoundaryFaceSet
     side::Int # -1 (low), +1 (high)
 end
 
-function boundary_faces(g::StructuredGrid)
+function boundary_faces(g::StructGrid2D)
     inlet = BoundaryFaceSet([cellindex(g, 1, j) for j in 1:g.nr], 1, -1) # z = 0
     outlet = BoundaryFaceSet([cellindex(g, g.nz, j) for j in 1:g.nr], 1, +1) # z = L
     center = BoundaryFaceSet([cellindex(g, i, 1) for i in 1:g.nz], 2, -1) # r = 0 (symmetry)
@@ -89,11 +92,10 @@ function boundary_faces(g::StructuredGrid)
     return (; inlet, outlet, center, wall) # named tuple
 end
 
-## Geometry
-
+# Geometry
 export Geometry, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry
 
-struct Geometry
+struct Geometry <: AbstractGeometry
     dz::Vector{Float64} # axial widths (nz)
     dr::Vector{Float64} # radial widths (nr)
     zc::Vector{Float64} # axial centroid (nz), midpoint
@@ -101,7 +103,7 @@ struct Geometry
     rbar::Vector{Float64} # arithmetic mid-radius (nr)
 end
 
-function Geometry(g::StructuredGrid)
+function Geometry(g::StructGrid2D)
     z = g.z
     r = g.r
     dz = diff(z)
@@ -121,7 +123,7 @@ struct FaceGeometry
     wf::Vector{Float64} # interp weight for owner
 end
 
-function FaceGeometry(g::StructuredGrid, geom::Geometry, fs::FaceSet)
+function FaceGeometry(g::StructGrid2D, geom::Geometry, fs::FaceSet)
     n = length(fs.owner)
     area = Vector{Float64}(undef, n)
     dist = Vector{Float64}(undef, n)
@@ -152,7 +154,7 @@ struct BoundaryFaceGeometry
     dist::Vector{Float64}
 end
 
-function BoundaryFaceGeometry(g::StructuredGrid, geom::Geometry, bf::BoundaryFaceSet)
+function BoundaryFaceGeometry(g::StructGrid2D, geom::Geometry, bf::BoundaryFaceSet)
     n = length(bf.cells)
     area = Vector{Float64}(undef, n)
     dist = Vector{Float64}(undef, n)
@@ -172,8 +174,7 @@ function BoundaryFaceGeometry(g::StructuredGrid, geom::Geometry, bf::BoundaryFac
     return BoundaryFaceGeometry(area, dist)
 end
 
-## DOF map (multi-field)
-
+# DOF map (multi-field)
 export DofMap, ndof, fieldindex, dof, celldof, fielddof
 
 # Cell interleaved, e.g. (C1, T1, C2, T2, ...)
@@ -206,12 +207,11 @@ celldof(dm::DofMap{N}, cell::Int) where {N} = ((cell - 1) * N + 1):(cell * N)
 fielddof(dm::DofMap{N}, field::Symbol) where {N} = fieldindex(dm, field):N:ndof(dm)
 # e.g. 1:2:19 for feilddof(dm, :C)
 
-## Sparsity pattern
-
+# Sparsity pattern
 export sparsity_pattern
 
 # for K, but use copy for diagonal M and Jr 
-function sparsity_pattern(g::StructuredGrid, dm::DofMap;
+function sparsity_pattern(g::StructGrid2D, dm::DofMap;
     coupling::Union{Nothing,AbstractMatrix{Bool}}=nothing, # field coupling inside cell (reaction)
     face_coupling::Union{Nothing,AbstractMatrix{Bool}}=nothing) # field coupling across faces (transport)
 

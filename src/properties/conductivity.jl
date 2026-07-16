@@ -1,7 +1,7 @@
-# Thermal conductivity correlations for ffective radial conductivity λ^eff_r
+# Effective radial conductivity λ^eff_r
 
-# Mixed gas thermal conductivity (Wassiljewa, uses Wilke φ) in W/(m K)
-# λ_gas = Σ_α (c_α λ_α) / Σ_β c_β φ_αβ, c_α = ρ_α/M_α
+# Wassiljewa
+# λ_gas = Σ_α (c_α λ_α) / Σ_β (c_β⋅φ_αβ) in W/(m K), c_α = ρ_α/M_α 
 function mix_conductivity(c, λ, μ, M, nsp::Int)
     λmix = 0.0
     @inbounds for α in 1:nsp
@@ -14,14 +14,15 @@ function mix_conductivity(c, λ, μ, M, nsp::Int)
     return λmix
 end
 
-# Radiative contribution λ_r (Bauer–Schlünder) in W/(m K)
-# λ_r = 2.27e-7 · ε_cat/(2−ε_cat) · T³ · dp
+# Bauer–Schlünder
+# λ_r = 2.27e-7·ε_cat/(2−ε_cat)·T³·dp in W/(m K)
 lambda_rad(T, ε_cat, dp) = 2.27e-7 * ε_cat / (2 - ε_cat) * T^3 * dp
 
-# Effective radial conductivity λ^eff_r = λ_conv + λ_cond,r (Bauer–Schlünder)
-# λ_conv = 1.15 ρ v_z cp,gas dp / (8 [2 − (1 − dp/R)²])
-# λ_cond,r = (1 − √(1−ε)) (λ_gas + ε λ_r) + √(1−ε) λ_rs
-# λ_rs (solid-contact conductivity, Bauer–Schlünder) is TODO
+# Bauer–Schlünder
+# λ^eff_r = λ_conv + λ_cond,r 
+# λ_conv = 1.15⋅ρ⋅v_z⋅cp,gas ⋅dp / (8[2 − (1 − dp/R)²])
+# λ_cond,r = (1 − √(1−ε))⋅(λ_gas + ε λ_r) + √(1−ε)⋅λ_rs
+# TODO λ_rs
 function lambda_eff_r(T, ρ, cp_gas, λ_gas, ε, ε_cat, dp, R, vz; λ_rs::Float64=0.0)
     λ_conv = 1.15 * ρ * vz * cp_gas * dp / (8 * (2 - (1 - dp / R)^2))
     λ_r = lambda_rad(T, ε_cat, dp)

@@ -4,10 +4,11 @@ using SparseArrays
 using ..StructuredMesh
 using ..Models
 using ..Problem
+import ..assemble_mass!   
 
 export advection_flux, diffusion_flux,
-    assemble_global, assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
-    assemble_react!, assemble_boundary!
+    assemble_mass!, assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
+    assemble_react!, assemble_boundary!, StateAssembly
 
 function advection_flux(βn::Real, area::Real)
     F = βn * area
@@ -16,32 +17,39 @@ end
 
 diffusion_flux(Df::Real, area::Real, dist::Real) = Df * area / dist
 
-#=
-
-# Global transport/mass assembly: 
-# Mass M, stiffness K (diffusion + advection)
-function assemble_global!(M::AbstractSparseMatrix, K::AbstractSparseMatrix,
-    dirs::NTuple{N,Tuple{FaceSet,FaceGeometry}}, grid::StructuredGrid, geom::Geometry,
-    dm::DofMap, model::AbstractModel) where {N}
-    # Cell loop
+# Constant mass matrix assembly
+function assemble_mass!(M::AbstractSparseMatrix, grid::AbstractGrid, geom::AbstractGeometry, dm::DofMap)
     for fi in eachindex(dm.fields)
         for c = 1:ncells(grid)
             cdof = dof(dm, c, fi)
             i, j = cellij(grid, c)
-            M[cdof, cdof] = cellvolume(geom, i, j)
+            M[cdof, cdof] = cellvolume(geom, i, j) # Cell volume on diag
         end
     end
+end
 
-    # For constant transport proceed below
-    state_dependent(model) && return M, K
-
-    # Face loop (use fieldindex here?)
+# State-dependent mass matrix C(y) assembly (Methanation.jl)
+function assemble_mass!(M::AbstractSparseMatrix, props::MethanationProps,
+    grid::AbstractGrid, geom::AbstractGeometry, dm::DofMap, model::AbstractModel)
     for fi in eachindex(dm.fields)
-        transported(model, fi) || continue # skip cell-local fields (e.g. PSA loadings)
+        for c = 1:ncells(grid)
+            i, j = cellij(grid, c)
+            cdof = dof(dm, c, fi)
+            M[cdof, cdof] = cellvolume(geom, i, j) * capacity(model, props, fi, c)
+        end
+    end
+    return M
+end
+
+# Constant transport assembly
+function assemble_transport!(K::AbstractSparseMatrix, dirs::NTuple{N,Tuple{FaceSet,FaceGeometry}}, 
+    dm::DofMap, model::AbstractModel) where {N}
+    for fi in eachindex(dm.fields)
+        transported(model, fi) || continue
         for (fs, fg) in dirs # axial/radial (FaceSet, FaceGeometry)
             for e = 1:length(fs.owner)
-                o, n = fs.owner[e], fs.neighbor[e] # cell indices
-                go, gn = dof(dm, o, fi), dof(dm, n, fi) # global dofs
+                o, n = fs.owner[e], fs.neighbor[e]
+                go, gn = dof(dm, o, fi), dof(dm, n, fi)
 
                 # Flux coeffs
                 k = diffusion_flux(diffusivity(model, fi, fs.axis),
@@ -64,52 +72,84 @@ function assemble_global!(M::AbstractSparseMatrix, K::AbstractSparseMatrix,
     end
 end
 
-# Per-step transport reassembly for state-dependent coefficients 
-# Similar to assemble_react! 
-function assemble_transport!(prob::ProblemCache, y::AbstractVector, 
-    dirs::NTuple{N,Tuple{FaceSet,FaceGeometry}}) where {N}
-    pressure!(prob.model, prob.pcell, y, prob.grid, prob.geom)
+# State-dependent transport K(y) assembly (Methanation.jl)
+function assemble_transport!(K::AbstractSparseMatrix, props::MethanationProps,
+    dirs::NTuple{N,Tuple{FaceSet,FaceGeometry}}, dm::DofMap, model::AbstractModel) where {N}
     fill!(K.nzval, 0.0)
     for fi in eachindex(dm.fields)
         transported(model, fi) || continue
         for (fs, fg) in dirs
             for e = 1:length(fs.owner)
-                o, n = fs.owner[e], fs.neighbor[e] 
-                go, gn = dof(dm, o, fi), dof(dm, n, fi) 
+                o, n = fs.owner[e], fs.neighbor[e]
+                go, gn = dof(dm, o, fi), dof(dm, n, fi)
 
-                T_face = fg.wf[e] * y[dof(prob.dm,o,fi)] + (1-fg.wf[e]) * y[dof(prob.dm,n,fi)]
-                p_face = fg.wf[e] * pcell[o] + (1-fg.wf[e]) * pcell[n]
+                # Face coeffs
+                Df = face_diffusivity(model, props, fi, fs.axis, o, n, fg.wf[e])
+                k = diffusion_flux(Df, fg.area[e], fg.dist[e])
+                βf = face_velocity(model, props, fi, fs.axis, o, n, fg.wf[e])
+                (co, cn) = advection_flux(βf, fg.area[e])
 
-                k = diffusion_flux(diffusivity(model, fi, fs.axis, T_face, p_face),
-                    fg.area[e], fg.dist[e]) 
-                (co, cn) = advection_flux(velocity(model, fs.axis), fg.area[e]) 
-
+                # Diffusion
                 K[go, go] += k
                 K[go, gn] -= k
                 K[gn, go] -= k
                 K[gn, gn] += k
 
+                # Advection
                 K[go, go] += co
                 K[go, gn] += cn
                 K[gn, go] -= co
                 K[gn, gn] -= cn
             end
         end
-    end               
-
+    end
+    return K
 end
 
-=#
+# State-dependent reassembly (Methanation.jl)
+struct StateAssembly{TP,TProps,TDirs,TBnd}
+    prob::TP
+    props::TProps
+    K_bc::SparseMatrixCSC{Float64,Int} # constant boundary contribs
+    dirs::TDirs
+    ebnd::TBnd 
+end
 
-# Constant mass/volume matrix assembly 
-function assemble_mass!(M::AbstractSparseMatrix, grid::StructuredGrid, geom::Geometry, dm::DofMap)
-    for fi in eachindex(dm.fields)
-        for c = 1:ncells(grid)
-            cdof = dof(dm, c, fi)
-            i, j = cellij(grid, c)
-            M[cdof, cdof] = cellvolume(geom, i, j) # Cell volume on diag
+function (sa::StateAssembly)(y::AbstractVector)
+    p = sa.prob
+    properties!(p.model, sa.props, y)
+    assemble_mass!(p.M, sa.props, p.grid, p.geom, p.dm, p.model)
+    assemble_transport!(p.K, sa.props, sa.dirs, p.dm, p.model)
+    @. p.K.nzval += sa.K_bc.nzval # re-add constant boundary contribs
+    assemble_energy_advection!(p.K, p.f_in, sa.props, p.dm, p.geom, p.grid,
+        p.model, sa.ebnd...) 
+    return sa
+end
+
+# State-dependent axial advection of T field at the inlet/outlet
+# coeff is ρ·cp,gas·βn
+# - outlet (coeff > 0): K[dof,dof] += ρcp_flow·βn·A
+# - inlet (coeff < 0): f_in[dof]  = ρcp_flow·βn·A·g(r)
+function assemble_energy_advection!(K::SparseMatrixCSC, f_in::AbstractVector,
+    props::MethanationProps, dm::DofMap, geom::AbstractGeometry, grid::AbstractGrid,
+    model::AbstractModel, bcs::Vararg{Tuple{BoundaryFaceSet,BoundaryFaceGeometry}})
+    fi = nspecies(model) + 1
+    field = dm.fields[fi]
+    for (bfs, bfg) in bcs
+        βn = velocity(model, bfs.axis) * bfs.side 
+        for k = 1:length(bfs.cells)
+            c = bfs.cells[k]
+            gc = dof(dm, c, fi)
+            coeff = βn * props.ρcp_flow[c] 
+            if coeff > 0
+                K[gc, gc] += coeff * bfg.area[k]
+            elseif coeff < 0
+                _, j = cellij(grid, c)
+                f_in[gc] = -coeff * bfg.area[k] * inlet_value(model, field, geom.rc[j])
+            end
         end
     end
+    return K
 end
 
 # Weak Dirichlet or Danckwerts: Axial flux J_ax = βC - D_ax⋅∂_zC
@@ -118,11 +158,11 @@ end
 # Outlet  (β·n > 0): ∂_zC(L) = 0 <=> J_ax(L)⋅A = β⋅A⋅C_out
 # => K[dof,dof] += β·n·A
 function assemble_inlet_outlet!(K::SparseMatrixCSC, f_in::AbstractVector,
-    dm::DofMap, geom::Geometry, grid::StructuredGrid, model::AbstractModel,
-    bcs::Vararg{Tuple{BoundaryFaceSet, BoundaryFaceGeometry}})
-    for field in dm.fields
+    dm::DofMap, geom::AbstractGeometry, grid::AbstractGrid, model::AbstractModel,
+    bcs::Vararg{Tuple{BoundaryFaceSet, BoundaryFaceGeometry}}; fields=dm.fields)
+    for field in fields
         for (bfs, bfg) in bcs
-            βn = velocity(model, bfs.axis) * bfs.side # outward normal advection
+            βn = velocity(model, bfs.axis) * bfs.side
             for k = 1:length(bfs.cells)
                 A = bfg.area[k]
                 c = bfs.cells[k]
@@ -168,7 +208,8 @@ function assemble_react!(prob::ProblemCache, y::AbstractVector,
             prob.r[cd[a]] += re[a] * vol
         end
         if WithJac
-            reaction_jac!(prob.model, Jre, yc) # local nf×nf reaction jac
+            # local finite diff jac
+            reaction_jac!(prob.model, Jre, yc, prob.re0, prob.re, prob.yscr)
             for b in eachindex(cd), a in eachindex(cd)
                 prob.Jr[cd[a], cd[b]] += Jre[a, b] * vol
             end
