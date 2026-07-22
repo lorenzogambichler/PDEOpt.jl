@@ -153,10 +153,10 @@ function assemble_energy_advection!(K::SparseMatrixCSC, f_in::AbstractVector,
     return K
 end
 
-# Weak Dirichlet or Danckwerts: Axial flux J_ax = βC - D_ax⋅∂_zC
+# Weak Dirichlet or Danckwerts
 # Inlet (β·n < 0): (β⋅C(0) - D_ax⋅∂_zC(0)) = β⋅C_in <=> J_ax(0)⋅A = β⋅A⋅C_in
 # => f_in[dof] += -β·n·A·g
-# Outlet  (β·n > 0): ∂_zC(L) = 0 <=> J_ax(L)⋅A = β⋅A⋅C_out
+# Outlet (β·n > 0): ∂_zC(L) = 0 <=> J_ax(L)⋅A = β⋅A⋅C_out
 # => K[dof,dof] += β·n·A
 function assemble_inlet_outlet!(K::SparseMatrixCSC, f_in::AbstractVector,
     dm::DofMap, geom::AbstractGeometry, grid::AbstractGrid, model::AbstractModel,

@@ -2,6 +2,9 @@
 
 PDE-constrained optimization framework based on direct collocation (temporal) and FVM/DG-FEM (spatial).
 
+![](docs/img/PlugFlowOpt_Tw.png?raw=true "Optimal jacket temperature control Tw(t)")
+![](docs/img/PlugFlowOpt_T.png?raw=true "Optimal T-profile at final time")
+
 ## Governing equations
 
 Currently, two types of models are implemented. Both with cyclindrical, radially symmetric domains $(z,r)$ and only axial advection (no axial dispersion) with and a cooling/heating wall at $r = R$.
@@ -9,11 +12,11 @@ Currently, two types of models are implemented. Both with cyclindrical, radially
 **PlugFlow** (`plugflow.jl`): advection–diffusion–reaction, constant coefficients,
 first-order Arrhenius kinetics.
 
-$$\partial_t C + v_z\,\partial_z C = \frac{1}{r}\partial_r\big(r\,D_r\,\partial_r C\big) - k(T)\,C$$
+$$\partial_t C + v_z\partial_z C = \frac{1}{r}\partial_r\big(rD_r\partial_r C\big) - k(T)C$$
 
-$$\partial_t T + v_z\,\partial_z T = \frac{1}{r}\partial_r\big(r\,\lambda_r\,\partial_r T\big) - \Delta H_r\,k(T)\,C$$
+$$\partial_t T + v_z\partial_z T = \frac{1}{r}\partial_r\big(r\lambda_r\partial_r T\big) - \Delta H_rk(T)C$$
 
-$$k(T) = k_0\,\exp\!\left(-\frac{E_a}{R\,T}\right), \qquad -\lambda_r\,\partial_r T\big|_{r=R} = U\,\big(T - T_w(t)\big)$$
+$$k(T) = k_0\exp\left(-\frac{E_a}{RT}\right), \qquad -\lambda_r\partial_r T\big|_{r=R} = U\big(T - T_w(t)\big)$$
 
 **Methanation** (`methanation.jl`): 2D pseudo-homogeneous fixed bed, state
 $(\rho_i,\,T)$ with $i \in$ \{CH4, CO, CO2, H2O, H2, N2\}, Xu–Froment LHHW
