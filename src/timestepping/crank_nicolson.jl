@@ -2,8 +2,9 @@ module CrankNicolson
 
 using LinearAlgebra
 using SparseArrays
+using PDEOpt
 
-export cn_solve!, CNCache
+export cn_solve!, CNCache, set_ic!
 
 mutable struct CNStats
     nf::Int # function (residual) evals
@@ -101,6 +102,11 @@ function cn_solve!(cache::CNCache, react!, boundary!, solve!;
         solve!(ykp1, residual!, jacobian!, linsolve!, F, s; maxiter=maxiter, tol=tol)
     end
     return cache.y
+end
+
+function set_ic!(cache::CNCache, field, y0)
+    prob = cache.prob
+    @views cache.y[fielddof(prob.dm, field), 1] .= y0
 end
 
 end

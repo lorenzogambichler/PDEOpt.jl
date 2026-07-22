@@ -12,7 +12,8 @@ export advection_flux, diffusion_flux,
 
 function advection_flux(βn::Real, area::Real)
     F = βn * area
-    return F ≥ 0 ? (F, 0.0) : (0.0, F)
+    #return F ≥ 0 ? (F, 0.0) : (0.0, F)
+    return (max(F, zero(F)), min(F, zero(F)))
 end
 
 diffusion_flux(Df::Real, area::Real, dist::Real) = Df * area / dist
@@ -23,7 +24,7 @@ function assemble_mass!(M::AbstractSparseMatrix, grid::AbstractGrid, geom::Abstr
         for c = 1:ncells(grid)
             cdof = dof(dm, c, fi)
             i, j = cellij(grid, c)
-            M[cdof, cdof] = cellvolume(geom, i, j) # Cell volume on diag
+            M[cdof, cdof] = cellvolume(geom, i, j)
         end
     end
 end
@@ -136,14 +137,14 @@ function assemble_energy_advection!(K::SparseMatrixCSC, f_in::AbstractVector,
     fi = nspecies(model) + 1
     field = dm.fields[fi]
     for (bfs, bfg) in bcs
-        βn = velocity(model, bfs.axis) * bfs.side 
+        βn = velocity(model, bfs.axis) * bfs.side
         for k = 1:length(bfs.cells)
             c = bfs.cells[k]
             gc = dof(dm, c, fi)
-            coeff = βn * props.ρcp_flow[c] 
-            if coeff > 0
+            coeff = βn * props.ρcp_flow[c]
+            if βn > 0
                 K[gc, gc] += coeff * bfg.area[k]
-            elseif coeff < 0
+            elseif βn < 0
                 _, j = cellij(grid, c)
                 f_in[gc] = -coeff * bfg.area[k] * inlet_value(model, field, geom.rc[j])
             end

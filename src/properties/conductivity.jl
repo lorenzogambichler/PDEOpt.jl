@@ -9,7 +9,8 @@ function mix_conductivity(c, λ, μ, M, nsp::Int)
         for β in 1:nsp
             den += c[β] * wilke_phi(μ[α], μ[β], M[α], M[β])
         end
-        den > 0 && (λmix += c[α] * λ[α] / den)
+        #den > 0 && (λmix += c[α] * λ[α] / den)
+        λmix += c[α] * λ[α] / max(den, 1e-30)
     end
     return λmix
 end

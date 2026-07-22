@@ -38,7 +38,7 @@ include("psa.jl")
 
 export AbstractModel, transported, state_dependent,
     # reactions
-    Reaction, Arrhenius, reaction!, reaction_jac!, reaction_jac_fd!,
+    Reaction, Arrhenius, reaction!, reaction_jac!, reaction_jac_fd!, reaction_source,
     # plug flow
     PlugFlowModel, fields, diffusivity, velocity, inlet_value,
     wall_coeff, wall_field, inlet_mod, wall_mod,
@@ -47,4 +47,5 @@ export AbstractModel, transported, state_dependent,
     capacity, face_diffusivity, face_velocity,
     # PSA
     PSAModel, AdsorptionLDF
+    # SMB
 end

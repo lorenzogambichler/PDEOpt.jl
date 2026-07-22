@@ -10,6 +10,4 @@ struct CollocationStruct
     # TODO
 end
 
-
-
 end

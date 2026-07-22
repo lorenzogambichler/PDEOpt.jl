@@ -1,57 +1,31 @@
 using LinearAlgebra
 using SparseArrays
-using WriteVTK
+using CairoMakie
 using PDEOpt
 
-function write_vtk(path::String, cache::CNCache)
-    prob = cache.prob
-    grid = prob.grid
-    nz, nr = grid.nz, grid.nr
-    Cdofs, Tdofs = fielddof(prob.dm, :C), fielddof(prob.dm, :T)
-    mkpath(dirname(path))
-    paraview_collection(path) do pvd
-        for n = 1:cache.N
-            t = (n - 1) * cache.Δt
-            # cell-index order, reshape (nr,nz) then transpose -> [i,j]
-            Cgrid = permutedims(reshape(cache.y[Cdofs, n], nr, nz))
-            Tgrid = permutedims(reshape(cache.y[Tdofs, n], nr, nz))
-            vtk_grid("$(path)_$(n)", grid.z, grid.r) do vtk
-                vtk["C", VTKCellData()] = Cgrid
-                vtk["T", VTKCellData()] = Tgrid
-                pvd[t] = vtk
-            end
-        end
-    end
-end
-
-# IC
 function set_ic!(cache::CNCache)
     prob = cache.prob
     for field in prob.dm.fields
         @views cache.y[fielddof(prob.dm, field), 1] .= inlet_mod(prob.model, field, 0.0)
     end
+    return cache
 end
 
 function setup_problem()
-    # StructGrid2D, Geometry
-    L, R = 2.0, 0.5
-    nz, nr = 100, 25
-    grid = StructGrid2D(L, R, nz, nr)
-    geom = Geometry2D(grid)
+    L = 1.0
+    n = 100
 
-    # FaceSets, FaceGeometries
-    (fs_axial, fs_radial) = interior_faces(grid)
-    fg_axial = FaceGeometry(grid, geom, fs_axial)
-    fg_radial = FaceGeometry(grid, geom, fs_radial)
+    grid = StructGrid1D(L, n)
+    geom = Geometry1D(grid)
 
-    # BoundaryFaceSets, BoundaryFaceGeometries
+    (fs,) = interior_faces(grid)
+    fg = FaceGeometry(grid, geom, fs)
+
     bfs = boundary_faces(grid)
     bfg_inlet = BoundaryFaceGeometry(grid, geom, bfs.inlet)
     bfg_outlet = BoundaryFaceGeometry(grid, geom, bfs.outlet)
-    bfg_wall = BoundaryFaceGeometry(grid, geom, bfs.wall)
-
-    # Fields + DofMap
-    fields = (:C, :T)
+    
+    fields = (:C1, :C2, :T)
     dm = DofMap(ncells(grid), fields)
 
     # Coefficients
@@ -99,23 +73,4 @@ function setup_problem()
     Jre = zeros(nf, nf)
 
     return ProblemCache(M, K, Jr, r, re, Jre, f_in, f_wall, grid, geom, dm, model)
-end
-
-function main()
-    # Time-stepping
-    tf = 3.0
-    Δt = 0.01
-    N = round(Int, tf / Δt) + 1
-
-    # Caches
-    prob = setup_problem()
-    cache = CNCache(prob, Δt, N)
-
-    # IC
-    set_ic!(cache)
-    
-    # Solve and write results
-    @time cn_solve!(cache, (y, WithJac) -> assemble_react!(prob, y, WithJac),
-        (b, t) -> assemble_boundary!(prob, b, t), shamanskii()) # newton!, chord!, shamanskii()
-    write_vtk("apps/forward_solvers/results/PlugFlow/PlugFlow", cache)
 end

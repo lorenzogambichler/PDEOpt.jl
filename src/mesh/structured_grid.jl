@@ -25,8 +25,8 @@ struct StructGrid2D <: AbstractGrid
 end
 
 function StructGrid2D(Lz::Float64, Lr::Float64, nz::Int, nr::Int)
-    #z = collect(range(0.0, Lz; length = nz + 1)) # axial node vector
-    z = Lz .* range(0.0, 1.0; length = nz + 1).^2
+    z = collect(range(0.0, Lz; length = nz + 1)) # axial node vector
+    #z = Lz .* range(0.0, 1.0; length = nz + 1).^2
     r = collect(range(0.0, Lr; length = nr + 1)) # radial node vector
     return StructGrid2D(z, r, nz, nr)
 end

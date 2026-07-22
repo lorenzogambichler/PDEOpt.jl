@@ -22,7 +22,8 @@ function mixture_D(α::Int, c, Dbin, nsp::Int)
         num += c[j]
         den += c[j] / Dbin[α, j]
     end
-    return den > 0 ? num / den : zero(num)
+    #return den > 0 ? num / den : zero(num)
+    return num / max(den, 1e-30)
 end
 
 # Tsotsas–Schlünder

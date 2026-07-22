@@ -80,30 +80,31 @@ inlet_value(m::MethanationModel, field::Symbol, r::Real) = m.g[field](r)
 inlet_mod(m::MethanationModel, field::Symbol, t::Real) = m.y_in[field](t)
 wall_mod(m::MethanationModel, t::Real) = m.T_wall(t)
 
-### Property cache
-struct MethanationProps
-    # general 
-    ρ::Vector{Float64} # mass density, kg/m³
-    ρM::Vector{Float64} # molar density Σ ρ_α/M_α, mol/m³
-    p::Vector{Float64} # total pressure, Pa
-    x::Matrix{Float64} # mole frac (nsp × ncells)
-    c::Matrix{Float64} # molar conc ρ_α/M_α (nsp × ncells)
-    Deff::Matrix{Float64} # eff rad dispersion D^eff_r,α (nsp × ncells)
-    ρcp::Vector{Float64} # (ρcp)^eff 
-    ρcp_flow::Vector{Float64} # ρ·cp,gas 
-    λeff::Vector{Float64} # eff rad conductivity λ^eff_r
+# Property cache
+struct MethanationProps{T}
+    # general
+    ρ::Vector{T} # mass density, kg/m³
+    ρM::Vector{T} # molar density Σ ρ_α/M_α, mol/m³
+    p::Vector{T} # total pressure, Pa
+    x::Matrix{T} # mole frac (nsp × ncells)
+    c::Matrix{T} # molar conc ρ_α/M_α (nsp × ncells)
+    Deff::Matrix{T} # eff rad dispersion D^eff_r,α (nsp × ncells)
+    ρcp::Vector{T} # (ρcp)^eff
+    ρcp_flow::Vector{T} # ρ·cp,gas
+    λeff::Vector{T} # eff rad conductivity λ^eff_r
     # temporary (overwritten each cell)
-    cpα::Vector{Float64}
-    μα::Vector{Float64}
-    λα::Vector{Float64}
-    Dbin::Matrix{Float64} # binary diffusion (nsp × nsp)
+    cpα::Vector{T}
+    μα::Vector{T}
+    λα::Vector{T}
+    Dbin::Matrix{T} # binary diffusion (nsp × nsp)
 end
-function MethanationProps(nsp::Int, ncells::Int)
-    z1() = zeros(ncells)
-    z2() = zeros(nsp, ncells)
-    MethanationProps(z1(), z1(), z1(), z2(), z2(), z2(), z1(), z1(), z1(),
-        zeros(nsp), zeros(nsp), zeros(nsp), zeros(nsp, nsp))
+function MethanationProps{T}(nsp::Int, ncells::Int) where {T}
+    z1() = zeros(T, ncells)
+    z2() = zeros(T, nsp, ncells)
+    MethanationProps{T}(z1(), z1(), z1(), z2(), z2(), z2(), z1(), z1(), z1(),
+        zeros(T, nsp), zeros(T, nsp), zeros(T, nsp), zeros(T, nsp, nsp))
 end
+MethanationProps(nsp::Int, ncells::Int) = MethanationProps{Float64}(nsp, ncells)
 
 # Properties, y -> props
 # 1) ρ, ρM, x, c -> 2) p (id. gas) -> 3) cp, μ, λ per species -> 
@@ -113,13 +114,14 @@ function properties!(m::MethanationModel, props::MethanationProps, y::AbstractVe
     N = nsp + 1 # T
     ncells = length(props.ρ)
     Rgas = 8.314
+    Tv = eltype(y)
     @inbounds for cell in 1:ncells
         base = (cell - 1) * N
         T = y[base+N]
         ρview = view(y, base+1:base+nsp)
 
         # composition
-        ρ = 0.0; ρM = 0.0
+        ρ = zero(Tv); ρM = zero(Tv)
         for α in 1:nsp
             cα = ρview[α] / m.M[α]
             props.c[α, cell] = cα
@@ -129,7 +131,8 @@ function properties!(m::MethanationModel, props::MethanationProps, y::AbstractVe
         props.ρ[cell] = ρ
         props.ρM[cell] = ρM
         for α in 1:nsp
-            props.x[α, cell] = ρM > 0 ? props.c[α, cell] / ρM : 0.0
+            #props.x[α, cell] = ρM > 0 ? props.c[α, cell] / ρM : 0.0
+            props.x[α, cell] = props.c[α, cell] / max(ρM, 1e-30)
         end
 
         # pressure (id. gas)
@@ -237,7 +240,7 @@ function reaction!(m::MethanationModel, re, yc)
     nsp = nspecies(m)
     r̃ = _rates(m, yc)
     @inbounds for α in 1:nsp
-        s = 0.0
+        s = zero(eltype(re))
         for β in 1:3
             s += m.ν[β][α] * r̃[β]
         end

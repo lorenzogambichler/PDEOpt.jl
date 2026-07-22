@@ -18,7 +18,6 @@ end
 
 # Chord method
 # Factorize jac once at the initial guess and reuse it over the time step
-# Refactorize jac every time step
 function chord!(x, residual!, jacobian!, linsolve!, F, s; maxiter::Int=30, tol::Float64=1e-8)
     for it = 1:maxiter
         residual!(F, x)
@@ -33,7 +32,7 @@ end
 # Frozen-Jacobian Newton (Shamanskii)
 # Reuse one factorization across time-steps
 # Refactorize jac every refactor_every steps OR mid-step if r/rprev ≥ slow
-# Use functor for persistent state
+# Functor for persistent state
 mutable struct shamanskii
     refactor_every::Int 
     slow::Float64 # contractoin rate threshold

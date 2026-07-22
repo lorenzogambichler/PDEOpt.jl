@@ -15,7 +15,8 @@ function mix_viscosity(x, μ, M, nsp::Int)
         for β in 1:nsp
             den += x[β] * wilke_phi(μ[α], μ[β], M[α], M[β])
         end
-        den > 0 && (μmix += x[α] * μ[α] / den)
+        #den > 0 && (μmix += x[α] * μ[α] / den)
+        μmix += x[α] * μ[α] / max(den, 1e-30)
     end
     return μmix
 end

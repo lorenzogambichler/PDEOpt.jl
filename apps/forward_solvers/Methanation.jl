@@ -26,21 +26,12 @@ function write_vtk(path::String, cache::CNCache)
     end
 end
 
-# IC
-function set_ic!(cache::CNCache)
-    prob = cache.prob
-    for field in prob.dm.fields
-        @views cache.y[fielddof(prob.dm, field), 1] .= inlet_mod(prob.model, field, 0.0)
-    end
-    return cache
-end
-
 function setup_problem()
     # StructGrid2D, Geometry
     L, R = 5.0, 0.01 
     nz, nr = 150, 7
     grid = StructGrid2D(L, R, nz, nr)
-    geom = Geometry(grid)
+    geom = Geometry2D(grid)
 
     # FaceSets, FaceGeometries
     (fs_axial, fs_radial) = interior_faces(grid)
@@ -126,7 +117,9 @@ function main()
     cache = CNCache(prob, Δt, N)
 
     # IC
-    set_ic!(cache)
+    for field in prob.dm.fields
+        set_ic!(cache, field, inlet_mod(model, field, 0.0))
+    end
 
     # Solve (state-dependent -> reassemble!) and write results
     @time cn_solve!(cache,

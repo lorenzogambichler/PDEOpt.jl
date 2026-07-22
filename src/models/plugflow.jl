@@ -5,18 +5,24 @@ struct Arrhenius <: Reaction
     ΔHr::Float64 # J/mol
     T_floor::Float64 # K
 end
+
+# No T-safeguard for opt
+function reaction_source(react::Arrhenius, C, T)
+    r = react.k0 * exp(-react.Ea / (8.314 * T)) * C
+    return (-r, -react.ΔHr * r)
+end
+
 function reaction!(react::Arrhenius, re, yc)
     C, T = yc[1], yc[2]
-    R = react.k0 * exp(-react.Ea / (8.314 * max(T, react.T_floor))) * C
-    re[1] = -R
-    re[2] = -react.ΔHr * R
+    re[1], re[2] = reaction_source(react, C, max(T, react.T_floor)) # (sC, sT)
     return re
 end
+
 function reaction_jac!(react::Arrhenius, Jre, yc)
     C, T = yc[1], yc[2]
     e = react.k0 * exp(-react.Ea / (8.314 * max(T, react.T_floor)))
     R = e * C
-    RT = T > react.T_floor ? R * react.Ea / (8.314 * T^2) : 0.0
+    RT = T > react.T_floor ? R * react.Ea / (8.314 * T^2) : 0.0 # max()-term
     Jre[1, 1] = -e # ∂sC/∂C
     Jre[1, 2] = -RT # ∂sC/∂T
     Jre[2, 1] = -react.ΔHr * e # ∂sT/∂C
