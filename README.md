@@ -22,14 +22,14 @@ $$k(T) = k_0\exp\left(-\frac{E_a}{RT}\right), \qquad -\lambda_r\partial_r T\big|
 $(\rho_i,\,T)$ with $i \in$ \{CH4, CO, CO2, H2O, H2, N2\}, Xu–Froment LHHW
 kinetics over three reactions $j \in \{1,2,3\}$.
 
-$$\varepsilon\,\partial_t \rho_i+ v_z\,\partial_z \rho_i = \frac{1}{r}\partial_r\big(r\,D^{\text{eff}}_{r,i}\,\partial_r \rho_i\big) + (1-\varepsilon)\,M_i \sum_j \nu_{i,j}\,\tilde{r}_j(\rho, T)$$
+$$\varepsilon\partial_t \rho_i+ v_z\partial_z \rho_i = \frac{1}{r}\partial_r\big(rD^{\text{eff}}_{r,i}\partial_r \rho_i\big) + (1-\varepsilon)M_i \sum_j \nu_{i,j}\tilde{r}_j(\rho, T)$$
 
-$$(\rho c_p)^{\text{eff}}\,\partial_t T + \rho\,c_{p,\text{gas}}\,v_z\,\partial_z T = \frac{1}{r}\partial_r\big(r\,\lambda^{\text{eff}}_r\,\partial_r T\big) - (1-\varepsilon) \sum_j \Delta H_j\,\tilde{r}_j(\rho, T)$$
+$$(\rho c_p)^{\text{eff}}\partial_t T + \rho c_{p,\text{gas}}v_z\partial_z T = \frac{1}{r}\partial_r\big(r\lambda^{\text{eff}}_r\partial_r T\big) - (1-\varepsilon) \sum_j \Delta H_j\tilde{r}_j(\rho, T)$$
 
-$$p = \sum_i \frac{\rho_i}{M_i}\,R\,T, \qquad -\lambda^{\text{eff}}_r\,\partial_r T\big|_{r=R} = k_w\,\big(T - T_w(t)\big)$$
+$$p = \sum_i \frac{\rho_i}{M_i}RT, \qquad -\lambda^{\text{eff}}_r\,\partial_r T\big|_{r=R} = k_w\big(T - T_w(t)\big)$$
 
 All transport coefficients $D^{\text{eff}}_{r,i}$, $\lambda^{\text{eff}}_r$,
-$(\rho c_p)^{\text{eff}}$ depend on the state via `properties!`.
+$(\rho c_p)^{\text{eff}}$ depend on the state (see `properties.jl`).
 
 ## Spatial discretization
 
@@ -62,7 +62,8 @@ $$0 = M\big(y_{k+1/2}\big)(y_{k+1}-y_k) + (\Delta t)K\big(y_{k+1/2}\big)y_{k+1/2
 ## Simple example case (PlugFlowOpt.jl)
 
 Wall-temperature control $T_w(t)$ of the plug-flow reactor, minimizing reactant concentration at the outlet (i.e. maximize conversion) with a rate penalty on the controls:
-$$\min_{y,\,T_w} \; \sum_{k=1}^{N} \sum_{j \in \text{outlet}} v_z\,A_j\,C_{j,k} \; + \; \gamma \sum_{k=1}^{N-1} \big(\tilde{T}_{w,k+1} - \tilde{T}_{w,k}\big)^2$$
+
+$$\min_{y,\,T_w} \sum_{k=1}^{N} \sum_{j \in \text{outlet}} v_zA_jC_{j,k} + \gamma \sum_{k=1}^{N-1} \big(\tilde{T}_{w,k+1} - \tilde{T}_{w,k}\big)^2$$
 
 s.t. the trapezoidal collocation constraints and box bounds
 $T \le T_{\max}$, $C \ge 10^{-4}$ (safeguard), $T_w \in [T_{w,\min}, T_{w,\max}]$.
