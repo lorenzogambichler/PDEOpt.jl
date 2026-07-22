@@ -36,7 +36,7 @@ $(\rho c_p)^{\text{eff}}$ depend on the state via `properties!`.
 
 The general discretized ODE form after spatial discretization is
 
-$$M(y)\, \dot{y} + K(y)\, y = r(y) + b(u)$$
+$$M(y) \dot{y} + K(y) y = r(y) + b(u)$$
 
 with
 - M(y): Mass matrix (transient term)
@@ -47,14 +47,14 @@ with
 ## Temporal discretization
 
 For the contruction of the NLP, the decision vector is
-$$z = (y_1,\dots,y_N,\; u_1,\dots,u_N), \qquad y_k \in \mathbb{R}^n,\; u_k \in \mathbb{R}^m$$
+$$z = (y_1,\dots,y_N, u_1,\dots,u_N), \qquad y_k \in \mathbb{R}^n, u_k \in \mathbb{R}^m$$
 and the ODE-constraint is formulated using different schemes, based on the problem definition:
 
 - Trapezoidal collocation (`PlugFlowOpt.jl`)
-$$0 = A\,y_{k+1} - B\,y_k - \frac{\Delta t}{2}\big(r(y_{k+1}) + r(y_k)\big) - \frac{\Delta t}{2}\big(b(t_{k+1},u_{k+1}) + b(t_k,u_k)\big)$$ with $$A = M + \tfrac{\Delta t}{2}K, \quad B = M - \tfrac{\Delta t}{2}K.$$
+$$0 = Ay_{k+1} - By_k - \tfrac{\Delta t}{2}\big(r(y_{k+1}) + r(y_k)\big) - \tfrac{\Delta t}{2}\big(b(t_{k+1},u_{k+1}) + b(t_k,u_k)\big)$$ with $$A = M + \tfrac{\Delta t}{2}K, \quad B = M - \tfrac{\Delta t}{2}K.$$
 
 - Implicit midpoint collocation (`MethanationOpt.jl`)
-$$0 = M\big(y_{k+1/2}\big)\,(y_{k+1}-y_k) \; + \; \Delta t\,K\big(y_{k+1/2}\big)\,y_{k+1/2} \; - \; \Delta t\,r\big(y_{k+1/2}\big) \; - \; \Delta t\,b\big(t_{k+1/2},\,u_{k+1/2}\big)$$ with $$y_{k+1/2} = \frac{y_k + y_{k+1}}{2}, \qquad u_{k+1/2} = \frac{u_k + u_{k+1}}{2}, \qquad t_{k+1/2} = \left(k - \tfrac12\right)\Delta t$$
+$$0 = M\big(y_{k+1/2}\big)(y_{k+1}-y_k) + (\Delta t)K\big(y_{k+1/2}\big)y_{k+1/2} - (\Delta t) r\big(y_{k+1/2}\big) - (\Delta t)b\big(t_{k+1/2},u_{k+1/2}\big)$$ with $$y_{k+1/2} = \frac{y_k + y_{k+1}}{2}, \qquad u_{k+1/2} = \frac{u_k + u_{k+1}}{2}, \qquad t_{k+1/2} = \left(k - \tfrac12\right)\Delta t$$
 
 ## Simple example case (PlugFlowOpt.jl)
 
@@ -69,7 +69,7 @@ All the decision variables are scaled for better conditioning and the penalty ac
 running on multiple threads, using a Crank-Nicolson forward simulation as initial guess (`cn_solve!`).
 
 **Size:** Grid is $50\cdot 5 =250$ cells with $2$ fields, meaning $n = 500$. $t_f = 2\ \mathrm{s}$,
-$\Delta t = 0.005\ \mathrm{s}$, so $N = 401$. That results in $n\cdot N + N = 200901$ variables
+$\Delta t = 0.005\ \mathrm{s}$, so $N = 401$. That results in $nN + N = 200901$ variables
 and $nN = 200500$ equality constraints.
 
 **Output:** `apps/optimal_control/results/PlugFlow/` — `opt_*.vtr` (optimized

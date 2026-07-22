@@ -5,5 +5,4 @@ apps/optimal_control/results/
 *.pvd
 *.vtr
 
-CLAUDE.md
 TODO.md
