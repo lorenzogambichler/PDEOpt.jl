@@ -2,8 +2,10 @@
 
 PDE-constrained optimization framework based on direct collocation (temporal) and FVM/DG-FEM (spatial).
 
-![](docs/img/PlugFlowOpt_Tw.png?raw=true "Optimal jacket temperature control Tw(t)")
-![](docs/img/PlugFlowOpt_T.png?raw=true "Optimal T-profile at final time")
+<p align="center">
+  <img src="docs/img/PlugFlowOpt_Tw.png" width="48%">
+  <img src="docs/img/PlugFlowOpt_T.png"  width="48%">
+</p>
 
 ## Governing equations
 
@@ -76,7 +78,7 @@ running on multiple threads, using a Crank-Nicolson forward simulation as initia
 $\Delta t = 0.005\ \mathrm{s}$, so $N = 401$. That results in $nN + N = 200901$ variables
 and $nN = 200500$ equality constraints.
 
-**Output:** `apps/optimal_control/results/PlugFlow/` — `opt_*.vtr` (optimized
+**Output:** `apps/optimal_control/results/PlugFlow/`, `opt_*.vtr` (optimized
 trajectory) as ParaView collection and the $T_w$ profile as `control.csv`.
 
 ## Complex case (MethanationOpt.jl)
