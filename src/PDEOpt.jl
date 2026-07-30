@@ -4,7 +4,6 @@ include("mesh/structured_grid.jl")
 include("properties/properties.jl")
 include("models/models.jl")
 include("problem/problem.jl")
-#include("optimization/nlp.jl")
 function assemble_mass! end
 include("assembly/assemble_dg.jl")
 include("assembly/assemble_fvm.jl")
@@ -19,7 +18,6 @@ using .AssembleDG
 using .AssembleFVM
 using .NonlinearSolvers
 using .CrankNicolson
-#using .NLP
 
 # FEM assembly
 export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advection!,
@@ -53,8 +51,5 @@ export newton!, chord!, shamanskii
 
 # ODE solvers
 export cn_solve!, CNCache, set_ic!
-
-# NLP
-#export OptCache, build_nlp
 
 end

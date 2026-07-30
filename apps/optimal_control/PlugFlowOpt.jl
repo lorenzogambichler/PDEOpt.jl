@@ -4,8 +4,6 @@ using SparseArrays
 using WriteVTK
 using PDEOpt
 
-# includet separately (not in PDEOpt)
-# avoid loading IPOPT and JuMP for other apps
 includet("../../src/optimization/jump_ipopt.jl")
 
 function write_vtk(path::String, prob::ProblemCache, y::AbstractMatrix, Δt::Float64, N::Int)

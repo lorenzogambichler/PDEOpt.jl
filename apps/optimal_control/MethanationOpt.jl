@@ -1,3 +1,4 @@
+ENV["OMP_NUM_THREADS"] = "4"
 using LinearAlgebra
 using SparseArrays
 using PDEOpt
@@ -82,28 +83,30 @@ function forward_guess(prob, sa, y0, Δt, N)
 end
 
 function main()
-    tf, Δt = 50.0, 1.0
+    # Params
+    tf, Δt = 100.0, 1.0
     N = round(Int, tf / Δt) + 1
-    Tw_nom = 650.0
-    Tw_min, Tw_max, Tmax = 500.0, 750.0, 900.0
-    γ = 1e-6
+    Tw_nom = 600.0
+    Tw_min, Tw_max, Tmax = 300.0, 650.0, 750.0
+    γ = 0.01
 
-    prob, sa, y0 = setup_problem(; Tw=Tw_nom, vz=0.5)
-    n = ndof(prob.dm)
+    # Problem
+    prob, sa, y0 = setup_problem(; Tw=Tw_nom)
 
+    # Initial guesses
     Yguess = forward_guess(prob, sa, y0, Δt, N)
     x0 = vcat(vec(Yguess), fill(Tw_nom, N))
 
-    ocp0 = MethOCP(sa, Δt, N, y0; Tw_min=Tw_min, Tw_max=Tw_max, Tmax=Tmax)
-    obj_scale = 1.0 / ch4_production(ocp0, Yguess)
-
-    ocp = MethOCP(sa, Δt, N, y0; Tw_min=Tw_min, Tw_max=Tw_max, Tmax=Tmax,
-        γ=γ, obj_scale=obj_scale)
+    # OCP
+    co2_in = co2_inflow(sa) # discrete inlet flowrate CO2
+    ocp = MethanationOCP(sa, Δt, N, y0; Tw_min=Tw_min, Tw_max=Tw_max, Tmax=Tmax,
+        γ=γ, co2_in=co2_in)
     res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-6)
 
+    Xg, Xo = co2_conversion(ocp, Yguess), co2_conversion(ocp, res.Y)
     println("status: ", res.stats.status)
-    println("CH4 production (guess -> opt): ",
-        ch4_production(ocp0, Yguess), " -> ", ch4_production(ocp0, res.Y))
+    println("final CO2 conversion (guess -> opt): ",
+        round(Xg[end]; digits=4), " -> ", round(Xo[end]; digits=4))
     println("Tw: ", round.(res.u; digits=1))
     return res
 end
