@@ -26,5 +26,4 @@ end
 ProblemCache(M, K, Jr, r, re, Jre, f_in, f_wall, grid, geom, dm, model) =
     ProblemCache(M, K, Jr, r, re, Jre, f_in, f_wall, grid, geom, dm, model,
         similar(re), similar(re))
-
 end

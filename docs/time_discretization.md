@@ -26,7 +26,9 @@ The optimal control problem is
 $$
 \begin{aligned}
 \min_{u(\cdot)}\quad
-& \frac{1}{t_f}\int_0^{t_f}\frac{F\big(y(t)\big)}{F_{\text{in}}}\,\mathrm dt
+& \frac{1}{t_f}\int_0^{t_f}
+  \frac{\dot n^{\text{out}}_{\mathrm{CO_2}}\big(y(t)\big)}{\dot n^{\text{in}}_{\mathrm{CO_2}}}
+  \,\mathrm dt
 \;+\;\gamma\,\mathcal R[u] \\[2pt]
 \text{s.t.}\quad
 & M(y)\dot y = f(y,t,u), \qquad t\in(0,t_f], \\
@@ -36,10 +38,43 @@ $$
 \end{aligned}
 $$
 
-where $F(y)=\sum_j w_j\,y_{d_j}$ is the discrete outlet CO₂ flow (`co2_w`, `co2_dofs`)
-and $F_{\text{in}}$ the fixed inlet flow. Since the conversion is
-$X_{\mathrm{CO_2}}(y) = 1 - F(y)/F_{\text{in}}$, minimizing the mean outlet fraction is
-equivalent to maximizing the mean conversion — the Lagrange objective of Bremer et al.
+with $\mathcal R[u]$ the control-smoothness penalty of §4.2. The outlet CO₂ molar flow is a
+**pointwise functional of the state**: it is defined for each $t\in[0,t_f]$ by the outlet
+face cells $d_j$ (`co2_dofs`) and weights $w_j = v_z A_j^{\text{out}}$ (`co2_w`),
+
+$$
+\dot n^{\text{out}}_{\mathrm{CO_2}}\big(y(t)\big)
+\;=\;\frac{1}{M_{\mathrm{CO_2}}}\sum_j w_j\,y_{d_j}(t)
+\qquad\text{for every } t\in[0,t_f],
+$$
+
+whereas the inlet flow is a **constant** (this app fixes $y_{\text{in}}$, `co2_inflow`),
+
+$$
+\dot n^{\text{in}}_{\mathrm{CO_2}}
+\;=\;\frac{\rho_{\mathrm{CO_2},\text{in}}}{M_{\mathrm{CO_2}}}
+      \sum_j v_z A_j^{\text{in}}\,g(r_j)
+\;\equiv\;\text{const},
+\qquad
+\frac{\mathrm d}{\mathrm dt}\,\dot n^{\text{in}}_{\mathrm{CO_2}} = 0 .
+$$
+
+$M_{\mathrm{CO_2}}$ cancels in every ratio below, which is why the code forms the mass flows
+$\sum_j w_j\,\rho_{d_j}$ directly from the state. The conversion inherits the pointwise
+character of $\dot n^{\text{out}}_{\mathrm{CO_2}}$; its time average is a separate, derived
+scalar:
+
+$$
+X_{\mathrm{CO_2}}(t)
+\;=\;1-\frac{\dot n^{\text{out}}_{\mathrm{CO_2}}\big(y(t)\big)}{\dot n^{\text{in}}_{\mathrm{CO_2}}},
+\qquad
+\overline X_{\mathrm{CO_2}}
+\;=\;\frac{1}{t_f}\int_0^{t_f} X_{\mathrm{CO_2}}(t)\,\mathrm dt .
+$$
+
+Because $\dot n^{\text{in}}_{\mathrm{CO_2}}$ is constant, the Lagrange term above is exactly
+$1-\overline X_{\mathrm{CO_2}}$, so minimizing the mean outlet fraction is equivalent to
+maximizing the mean conversion — the Lagrange objective of Bremer et al.
 
 ---
 
@@ -222,18 +257,25 @@ $$
 \int_{I_k}\phi(t)\,\mathrm dt \;\approx\; \Delta t\sum_{i=1}^{s} b_i\,\phi(\tau_k^i),
 $$
 
-and since $\Delta t/t_f = 1/N_e$,
+and since $\Delta t/t_f = 1/N_e$, evaluating the pointwise integrand of §1 at the
+collocation nodes $\tau_k^i$ — where $Y_k^i \approx y(\tau_k^i)$ — gives
 
 $$
 J_{\text{conv}}
-\;=\;\frac{1}{N_e}\sum_{k=1}^{N_e}\sum_{i=1}^{s} b_i\,\frac{F(Y_k^i)}{F_{\text{in}}}
-\;\approx\;\frac{1}{t_f}\int_0^{t_f}\frac{F(y)}{F_{\text{in}}}\,\mathrm dt
+\;=\;\frac{1}{N_e}\sum_{k=1}^{N_e}\sum_{i=1}^{s} b_i\,
+      \frac{\dot n^{\text{out}}_{\mathrm{CO_2}}(Y_k^i)}{\dot n^{\text{in}}_{\mathrm{CO_2}}}
+\;=\;1-\frac{1}{N_e}\sum_{k=1}^{N_e}\sum_{i=1}^{s} b_i\,X_{\mathrm{CO_2}}(\tau_k^i)
+\;\approx\;\frac{1}{t_f}\int_0^{t_f}
+      \frac{\dot n^{\text{out}}_{\mathrm{CO_2}}\big(y(t)\big)}{\dot n^{\text{in}}_{\mathrm{CO_2}}}\,\mathrm dt
 \;=\; 1-\overline{X}_{\mathrm{CO_2}} .
 $$
 
-Minimizing $J_{\text{conv}}$ maximizes the mean CO₂ conversion. Note this is a genuine
-order-$2s-1$ quadrature, replacing the trapezoidal rule over time nodes used with the
-previous midpoint scheme.
+The second equality is exact, since $\sum_i b_i = 1$ and $\dot n^{\text{in}}_{\mathrm{CO_2}}$
+is constant; only the third carries quadrature error. Minimizing $J_{\text{conv}}$
+maximizes the mean CO₂ conversion. Note the nodes are the $sN_e$ stage columns of $z$ —
+$t=0$ is *not* a quadrature node, since Radau IIA collocates on the right-hand nodes. This
+is a genuine order-$2s-1$ quadrature, replacing the trapezoidal rule over time nodes used
+with the previous midpoint scheme.
 
 ### 4.2 Control parametrization and regularization
 

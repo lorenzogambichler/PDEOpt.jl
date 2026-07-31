@@ -1,10 +1,5 @@
 # Full-space DtO (ADNLPModels for sparse AD) for MethanationModel
-# Radau IIA collocation on finite elements, differentiation-matrix form.
-#
-# Scaling to [0,1]:
-# ρ_α = (c_tot,in·M_α)·ρ̂_α
-# T = T_min + (Tmax − T_min)·T̂
-# Tw = Tw_min + (Tw_max − Tw_min)·û
+# Radau IIA (OCFE)
 
 using PDEOpt
 using SparseArrays
@@ -19,12 +14,13 @@ ZeroHessian(args...; kwargs...) = ZeroHessian()
 ADNLPModels.get_nln_nnzh(::ZeroHessian, nvar) = 0
 
 struct MethanationOCP{TSA,TTab}
+    # Collocation
     sa::TSA
-    tab::TTab # RadauIIA tableau
-    Δt::Float64 # element length
-    Ne::Int # number of finite elements
-    s::Int # collocation points per element
-    n::Int # spatial dof
+    tab::TTab # tableau
+    Δt::Float64
+    Ne::Int
+    s::Int # stages
+    n::Int # NLP vars
     y0::Vector{Float64}
     # Bounds
     Tw_min::Float64
@@ -32,7 +28,7 @@ struct MethanationOCP{TSA,TTab}
     Tmax::Float64
     T_min::Float64
     x_floor::Float64
-    x_floor_H2::Float64
+    x_floor_H2::Float64 # for kinetics conditioning
     # Scaling
     sy::Vector{Float64} # state scale
     y_off::Vector{Float64} # state offset (T only)
@@ -40,57 +36,53 @@ struct MethanationOCP{TSA,TTab}
     su::Float64 # control scale
     u_off::Float64 # control offset
     # Objective
-    γ::Float64
-    co2_dofs::Vector{Int}
+    γ::Float64 # reg scale
+    co2_dofs::Vector{Int} # outlet
     co2_w::Vector{Float64} # vz·A
     co2_in::Float64
-    # Support sets. M and f_wall are allocated with K's pattern / full length so that
-    # CN can share it, but assemble_mass! only writes the diagonal and f_wall only the
-    # wall cells. Touching just the true support keeps the traced Jacobian from
-    # inheriting those structural zeros as spurious dependencies.
-    mdiag::Vector{Int} # nzval index of M[d,d]
-    wall_dofs::Vector{Int} # support of f_wall
+    # Sparsity
+    mdiag::Vector{Int} # nzval indexes M[d,d]
+    wall_dofs::Vector{Int} # f_wall dofs
     caches::Dict{DataType,Any}
 end
 
-# nzval positions of the diagonal of a CSC matrix
+# diagonal nzval positions CSC matrix
 function _diagindex(A::SparseMatrixCSC)
     idx = Vector{Int}(undef, size(A, 1))
     rv, cp = rowvals(A), A.colptr
     for d in eachindex(idx)
         p = searchsortedfirst(view(rv, cp[d]:cp[d+1]-1), d)
-        (p <= cp[d+1] - cp[d] && rv[cp[d]+p-1] == d) ||
-            error("mass matrix has no stored diagonal entry at dof $d")
         idx[d] = cp[d] + p - 1
     end
     return idx
 end
 
-# Trajectory columns: y_0 followed by s stage vectors per element.
-# The left endpoint of element k is the last stage of element k−1 (stiff accuracy).
+# Z = [y0; Y11; Y12; Y13; Y21; Y22; …; YNe2; YNe3; u1; …; uNe]
 ncols(ocp::MethanationOCP) = ocp.s * ocp.Ne + 1
 stagecol(ocp::MethanationOCP, k::Int, i::Int) = 1 + (k - 1) * ocp.s + i
 leftcol(ocp::MethanationOCP, k::Int) = 1 + (k - 1) * ocp.s
 nvars(ocp::MethanationOCP) = ocp.n * ncols(ocp) + ocp.Ne
 ncons(ocp::MethanationOCP) = ocp.n * ocp.s * ocp.Ne
 
-# Time of each trajectory column: t=0, then the collocation points of each element
+# Time of each col
 function timegrid(ocp::MethanationOCP)
     t = zeros(ncols(ocp))
-    for k in 1:ocp.Ne, i in 1:ocp.s
-        t[stagecol(ocp, k, i)] = stage_time(ocp.tab, k, i, ocp.Δt)
+    for k in 1:ocp.Ne
+        for i in 1:ocp.s
+            t[stagecol(ocp, k, i)] = stage_time(ocp.tab, k, i, ocp.Δt)
+        end
     end
     return t
 end
 
-# Left edge of each element — the control is piecewise constant on [t_{k-1}, t_k)
+# Tw piecewise constant on el -> left edge of each el
 control_times(ocp::MethanationOCP) = [(k - 1) * ocp.Δt for k in 1:ocp.Ne]
 
 # Σ_j vz·A_j·g(r_j)·ρ_CO2,in
 co2_inflow(sa, t::Real=0.0) =
     sum(@view sa.prob.f_in[fielddof(sa.prob.dm, :CO2)]) * inlet_mod(sa.prob.model, :CO2, t)
 
-# Reference scales, sy/y_off (variables), sc (constraint rows)
+# Reference scales, sy/y_off (vars), sc (constr rows)
 function _scales(sa, y0::Vector{Float64}, T_min::Float64, Tmax::Float64)
     prob = sa.prob
     dm, m, grid, geom = prob.dm, prob.model, prob.grid, prob.geom
@@ -107,12 +99,12 @@ function _scales(sa, y0::Vector{Float64}, T_min::Float64, Tmax::Float64)
         V = cellvolume(geom, i, j)
         for α in 1:nsp
             d = dof(dm, c, α)
-            sy[d] = ctot * m.M[α]
+            sy[d] = ctot * m.M[α] # ρ scaling
             sc[d] = 1 / (m.ε * V * sy[d])
         end
         d = dof(dm, c, nsp + 1)
-        sy[d] = ΔT
-        y_off[d] = T_min
+        sy[d] = ΔT # T scaling
+        y_off[d] = T_min # T offset
         sc[d] = 1 / (ρcp_ref * V * ΔT)
     end
     return sy, y_off, sc
@@ -133,7 +125,7 @@ function MethanationOCP(sa, tab, Δt::Float64, Ne::Int, y0::Vector{Float64};
 
     mdiag = _diagindex(sa.prob.M)
     nnz(dropzeros(copy(sa.prob.M))) == ndof(dm) ||
-        error("mass matrix is not diagonal — the diagonal-product residual is invalid")
+        error("mass matrix not diagonal")
     wall_dofs = findall(!iszero, sa.prob.f_wall)
 
     return MethanationOCP(sa, tab, Δt, Ne, nstages(tab), ndof(dm), copy(y0),
@@ -182,12 +174,7 @@ function ocp_cons!(ocp::MethanationOCP, cx, z)
     return _residual!(cx, z, ocp, c.prob, c.sa, c.buf)
 end
 
-# Radau IIA collocation, differentiation-matrix form. For element k, stage i:
-#
-#   M(Y_k^i)·∑_j d_ij (Y_k^j − y_{k−1}) + Δt·[K(Y_k^i)Y_k^i − r(Y_k^i) − b(t_k^i, u_k)] = 0
-#
-# with D = A^(-1). Because ∑_j d_ij − d0_i = 0 the state offsets cancel in the D
-# combination, so it can be formed on scaled variables and rescaled by sy.
+# Radau IIA collocation 
 function _residual!(cx, z, ocp::MethanationOCP, prob, saT, buf)
     n, s, Ne, Δt = ocp.n, ocp.s, ocp.Ne, ocp.Δt
     nz = n * ncols(ocp)
@@ -204,7 +191,7 @@ function _residual!(cx, z, ocp::MethanationOCP, prob, saT, buf)
 
         for i in 1:s
             Yi = view(Z, :, stagecol(ocp, k, i))
-            @. yp = y_off + sy * Yi # physical stage value
+            @. yp = y_off + sy * Yi # physical stage val
 
             # w = ∑_j d_ij (Y_k^j − y_{k−1}), physical units
             d0i = tab.d0[i]
@@ -226,13 +213,13 @@ function _residual!(cx, z, ocp::MethanationOCP, prob, saT, buf)
                 md = inlet_mod(m, field, ti)
                 @views @. b[fd] += prob.f_in[fd] * md
             end
-            for d in ocp.wall_dofs # only the wall cells carry the control
+            for d in ocp.wall_dofs # only wall cells carry control
                 b[d] += prob.f_wall[d] * uk
             end
 
             row = ((k - 1) * s + i - 1) * n
             cb = view(cx, row+1:row+n)
-            Mnz = nonzeros(prob.M) # M is diagonal; skip its structural zeros
+            Mnz = nonzeros(prob.M) # M is diagonal -> skip structural zeros
             @views @. cb = Mnz[ocp.mdiag] * w
             mul!(Kv, prob.K, yp)
             @. cb = (cb + Δt * Kv - Δt * prob.r - Δt * b) * sc # row scaling
@@ -241,8 +228,8 @@ function _residual!(cx, z, ocp::MethanationOCP, prob, saT, buf)
     return cx
 end
 
-# min mean CO2 outlet fraction over [0,tf], equiv to max mean CO2 conversion.
-# Radau quadrature (weights b, exact to order 2s−1) on each element; ∑_i b_i = 1.
+# min mean CO2 outlet fraction over [0,tf], equiv to max mean CO2 conversion
+# Radau quad weights b, ∑_i b_i = 1
 function ocp_obj(ocp::MethanationOCP, z)
     n, s, Ne = ocp.n, ocp.s, ocp.Ne
     nz = n * ncols(ocp)
@@ -260,19 +247,36 @@ function ocp_obj(ocp::MethanationOCP, z)
         J_conv += ocp.tab.b[i] * (co2_out / ocp.co2_in)
     end
 
-    # piecewise-constant control: ∑(Δû)²·Ne is Δt-independent
+    # piecewise-constant control
     J_reg = zero(eltype(z))
     for k in 1:Ne-1
         J_reg += (u[k+1] - u[k])^2
     end
-
     return J_conv / Ne + ocp.γ * Ne * J_reg
 end
 
-# X_CO2 = 1 − ṅ_CO2,out/ṅ_CO2,in at every column of a physical trajectory
-co2_conversion(ocp::MethanationOCP, Z::AbstractMatrix) =
-    [1 - sum(ocp.co2_w[j] * Z[ocp.co2_dofs[j], col] for j in eachindex(ocp.co2_dofs)) / ocp.co2_in
-     for col in 1:size(Z, 2)]
+# X_CO2(t) = 1 − ṅ_CO2out(t)/ṅ_CO2in (outlet)
+function co2_conv(ocp::MethanationOCP, Z::AbstractMatrix)
+    X = Vector{Float64}(undef, size(Z, 2))
+    for col in axes(Z, 2)
+        nout = 0.0
+        for j in eachindex(ocp.co2_dofs)
+            nout += ocp.co2_w[j] * Z[ocp.co2_dofs[j], col]
+        end
+        X[col] = 1 - nout / ocp.co2_in
+    end
+    return X
+end
+
+# mean X_CO2 over [0,tf]
+function mean_co2_conv(ocp::MethanationOCP, Z::AbstractMatrix)
+    X = co2_conv(ocp, Z)
+    Xbar = 0.0
+    for k in 1:ocp.Ne, i in 1:ocp.s
+        Xbar += ocp.tab.b[i] * X[stagecol(ocp, k, i)]
+    end
+    return Xbar / ocp.Ne
+end
 
 function build_ocp(ocp::MethanationOCP, x0::Vector{Float64})
     n, nc = ocp.n, ncols(ocp)
@@ -285,15 +289,15 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64})
     uvar = fill(Inf, nvars(ocp))
     Zl = reshape(view(lvar, 1:nz), n, nc)
     Zu = reshape(view(uvar, 1:nz), n, nc)
-    for fi in 1:nsp # scaled ρ̂ (mole frac), all collocation points
+    for fi in 1:nsp # scaled ρ
         field = dm.fields[fi]
         fd = fielddof(dm, field)
         Zl[fd, :] .= field === :H2 ? ocp.x_floor_H2 : ocp.x_floor
     end
-    Td = fielddof(dm, dm.fields[nsp+1]) # path bound on T, all collocation points
+    Td = fielddof(dm, dm.fields[nsp+1]) # T path constr
     @views @. Zl[Td, :] = (ocp.T_min - ocp.y_off[Td]) / ocp.sy[Td]
     @views @. Zu[Td, :] = (ocp.Tmax - ocp.y_off[Td]) / ocp.sy[Td]
-    Zl[:, 1] .= view(z0, 1:n) # initial condition pins column 1
+    Zl[:, 1] .= view(z0, 1:n) # initial cond
     Zu[:, 1] .= view(z0, 1:n)
     lvar[nz+1:end] .= (ocp.Tw_min - ocp.u_off) / ocp.su
     uvar[nz+1:end] .= (ocp.Tw_max - ocp.u_off) / ocp.su
@@ -318,14 +322,8 @@ function hsl_options(linear_solver::String)
            merge(opts, (ma97_order="metis", ma97_scaling="none")) : opts
 end
 
-function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64};
-    linear_solver::String="ma97", kwargs...)
+function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97", kwargs...)
     nlp = build_ocp(ocp, x0)
-    # Ipopt's default bound_push (0.01) is absolute — max(1,|l|) — so with a species
-    # floor of x_floor = 1e-8 every trace species below 0.01 (CH4, CO, H2O, N2: ~40%
-    # of all variables) is shoved from ~1e-5 to 1e-2 before the first residual
-    # evaluation. A 1000x composition error wrecks the starting point; push only far
-    # enough to stay strictly interior.
     stats = ipopt(nlp; hessian_approximation="limited-memory",
         bound_relax_factor=0.0, bound_push=1e-6, bound_frac=1e-6,
         hsl_options(linear_solver)..., kwargs...)

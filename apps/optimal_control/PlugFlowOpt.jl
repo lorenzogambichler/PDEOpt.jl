@@ -4,7 +4,7 @@ using SparseArrays
 using WriteVTK
 using PDEOpt
 
-includet("../../src/optimization/jump_ipopt.jl")
+includet("../../src/optimization/plugFlow_jump.jl")
 
 function write_vtk(path::String, prob::ProblemCache, y::AbstractMatrix, Δt::Float64, N::Int)
     grid = prob.grid
@@ -144,6 +144,4 @@ function main()
     write_vtk(joinpath(resultsdir, "opt"), prob, res.y, Δt, N)
     write_vtk(joinpath(resultsdir, "forward"), cn)
     write_control(joinpath(resultsdir, "control.csv"), res.u, Δt, N)
-
-    return res
 end
