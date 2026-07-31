@@ -33,7 +33,7 @@ function setup_problem(; nz=25, nr=4, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     g = (CH4=r->1.0, CO=r->1.0, CO2=r->1.0, H2O=r->1.0, H2=r->1.0, N2=r->1.0, T=r->1.0)
     y_in = (CH4=t->ρin.CH4, CO=t->ρin.CO, CO2=t->ρin.CO2, H2O=t->ρin.H2O,
         H2=t->ρin.H2, N2=t->ρin.N2, T=T_in)
-    T_wall(t) = Tw
+    T_wall = Tw isa Function ? Tw : t -> Tw
 
     model = MethanationModel(fields; g=g, y_in=y_in, T_wall=T_wall,
         vz=vz, kw=120.0, Rrad=R)
@@ -70,22 +70,71 @@ function setup_problem(; nz=25, nr=4, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     return prob, sa, y0
 end
 
-function forward_guess(prob, sa, y0, Δt, N)
-    cache = CNCache(prob, Δt, N)
+# Linear interpolation of a uniform-Δt trajectory onto arbitrary times
+function resample(Y::AbstractMatrix, Δt::Float64, ts::AbstractVector)
+    n, N = size(Y)
+    Z = Matrix{Float64}(undef, n, length(ts))
+    for (m, t) in enumerate(ts)
+        x = clamp(t / Δt, 0.0, float(N - 1))
+        k = min(floor(Int, x), N - 2)
+        θ = x - k
+        @views @. Z[:, m] = (1 - θ) * Y[:, k+1] + θ * Y[:, k+2]
+    end
+    return Z
+end
+
+# CN forward sweep, resampled onto the collocation grid.
+#
+# The wall temperature is driven by a rate-limited proportional controller rather
+# than held at a constant: a free-running sweep ignites to ~895 K, which violates
+# the T ≤ Tmax path bound by ~145 K. Ipopt clamps its starting point into the
+# variable box before it evaluates anything, and clamping a 145 K excursion makes
+# the collocation residual of an otherwise good guess blow up by three orders of
+# magnitude. The guess has to be box-feasible, not just dynamically consistent.
+#
+# Returns the trajectory at the collocation nodes and the per-element wall
+# schedule, so the state and control guesses correspond to each other.
+function forward_guess(tf, ts, Δt, Ne; Δt_cn=1.0, Tw_min=300.0, Tw_max=650.0,
+    Tset=680.0, Kp=10.0, τ=10.0)
+    peak, Tw, tprev = Ref(0.0), Ref(Tw_max), Ref(-1.0)
+    log = Tuple{Float64,Float64}[]
+    Twf = function (t)
+        if t > tprev[]
+            raw = clamp(Tw_max - Kp * max(0.0, peak[] - Tset), Tw_min, Tw_max)
+            a = min(1.0, (t - max(tprev[], 0.0)) / τ)
+            Tw[] += a * (raw - Tw[])
+            tprev[] = t
+            push!(log, (t, Tw[]))
+        end
+        return Tw[]
+    end
+
+    prob, sa, _ = setup_problem(; Tw=Twf)
+    Td = fielddof(prob.dm, :T)
+    N = round(Int, tf / Δt_cn) + 1
+    cache = CNCache(prob, Δt_cn, N)
     for field in prob.dm.fields
         set_ic!(cache, field, inlet_mod(prob.model, field, 0.0))
     end
     cn_solve!(cache,
         (y, WithJac) -> assemble_react!(prob, y, WithJac),
         (b, t) -> assemble_boundary!(prob, b, t),
-        shamanskii(refactor_every=20); reassemble! = sa)
-    return cache.y
+        shamanskii(refactor_every=20);
+        reassemble! = y -> (peak[] = maximum(@view y[Td]); sa(y)))
+
+    u = fill(Tw_max, Ne) # element mean of the logged schedule
+    for k in 1:Ne
+        v = [w for (t, w) in log if (k - 1) * Δt <= t < k * Δt]
+        isempty(v) || (u[k] = sum(v) / length(v))
+    end
+    return resample(cache.y, Δt_cn, ts), u
 end
 
 function main()
     # Params
-    tf, Δt = 100.0, 1.0
-    N = round(Int, tf / Δt) + 1
+    tf = 600.0
+    Ne, s = 24, 3 # finite elements, Radau IIA collocation points per element
+    Δt = tf / Ne # 25 s, as in Bremer et al.
     Tw_nom = 600.0
     Tw_min, Tw_max, Tmax = 300.0, 650.0, 750.0
     γ = 0.01
@@ -93,18 +142,25 @@ function main()
     # Problem
     prob, sa, y0 = setup_problem(; Tw=Tw_nom)
 
-    # Initial guesses
-    Yguess = forward_guess(prob, sa, y0, Δt, N)
-    x0 = vcat(vec(Yguess), fill(Tw_nom, N))
-
     # OCP
     co2_in = co2_inflow(sa) # discrete inlet flowrate CO2
-    ocp = MethanationOCP(sa, Δt, N, y0; Tw_min=Tw_min, Tw_max=Tw_max, Tmax=Tmax,
-        γ=γ, co2_in=co2_in)
+    ocp = MethanationOCP(sa, RadauIIA(s), Δt, Ne, y0; Tw_min=Tw_min, Tw_max=Tw_max,
+        Tmax=Tmax, γ=γ, co2_in=co2_in)
+
+    # Initial guesses
+    Zguess, uguess = forward_guess(tf, timegrid(ocp), Δt, Ne;
+        Δt_cn=1.0, Tw_min=Tw_min, Tw_max=Tw_max)
+    x0 = vcat(vec(Zguess), uguess)
+    Tg = maximum(Zguess[fielddof(prob.dm, :T), :])
+    println("guess: max T = ", round(Tg; digits=1), " K (Tmax = ", Tmax, ")",
+        Tg > Tmax ? "  ** violates the path bound **" : "")
+
     res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-6)
 
-    Xg, Xo = co2_conversion(ocp, Yguess), co2_conversion(ocp, res.Y)
+    Xg, Xo = co2_conversion(ocp, Zguess), co2_conversion(ocp, res.Z)
     println("status: ", res.stats.status)
+    println("Ne = ", Ne, ", s = ", s, ", Δt = ", Δt, " s")
+    println("nvar = ", nvars(ocp), ", ncon = ", ncons(ocp))
     println("final CO2 conversion (guess -> opt): ",
         round(Xg[end]; digits=4), " -> ", round(Xo[end]; digits=4))
     println("Tw: ", round.(res.u; digits=1))
