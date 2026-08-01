@@ -140,7 +140,7 @@ function main()
     res = solve_nlp!(model, vars)
 
     # Visualize
-    resultsdir = joinpath(@__DIR__, "results/PlugFlow")
+    resultsdir = joinpath(@__DIR__, "results/PlugFlow/")
     write_vtk(joinpath(resultsdir, "opt"), prob, res.y, Δt, N)
     write_vtk(joinpath(resultsdir, "forward"), cn)
     write_control(joinpath(resultsdir, "control.csv"), res.u, Δt, N)

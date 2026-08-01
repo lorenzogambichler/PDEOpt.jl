@@ -1,6 +1,8 @@
 # Full-space DtO (ADNLPModels for sparse AD) for MethanationModel
 # Radau IIA (OCFE)
 
+# z = [y0; Y11; Y12; Y13; Y21; Y22; …; YNe2; YNe3; u1; …; uNe]
+
 using PDEOpt
 using SparseArrays
 using LinearAlgebra
@@ -20,15 +22,15 @@ struct MethanationOCP{TSA,TTab}
     Δt::Float64
     Ne::Int
     s::Int # stages
-    n::Int # NLP vars
+    n::Int # spatial dofs
     y0::Vector{Float64}
     # Bounds
     Tw_min::Float64
     Tw_max::Float64
     Tmax::Float64
-    T_min::Float64
+    Tmin::Float64
     x_floor::Float64
-    x_floor_H2::Float64 # for kinetics conditioning
+    x_floor_H2::Float64
     # Scaling
     sy::Vector{Float64} # state scale
     y_off::Vector{Float64} # state offset (T only)
@@ -57,7 +59,6 @@ function _diagindex(A::SparseMatrixCSC)
     return idx
 end
 
-# Z = [y0; Y11; Y12; Y13; Y21; Y22; …; YNe2; YNe3; u1; …; uNe]
 ncols(ocp::MethanationOCP) = ocp.s * ocp.Ne + 1
 stagecol(ocp::MethanationOCP, k::Int, i::Int) = 1 + (k - 1) * ocp.s + i
 leftcol(ocp::MethanationOCP, k::Int) = 1 + (k - 1) * ocp.s
@@ -83,12 +84,12 @@ co2_inflow(sa, t::Real=0.0) =
     sum(@view sa.prob.f_in[fielddof(sa.prob.dm, :CO2)]) * inlet_mod(sa.prob.model, :CO2, t)
 
 # Reference scales, sy/y_off (vars), sc (constr rows)
-function _scales(sa, y0::Vector{Float64}, T_min::Float64, Tmax::Float64)
+function _scales(sa, y0::Vector{Float64}, Tmin::Float64, Tmax::Float64)
     prob = sa.prob
     dm, m, grid, geom = prob.dm, prob.model, prob.grid, prob.geom
     nsp = nspecies(m)
     ctot = sum(y0[dof(dm, 1, α)] / m.M[α] for α in 1:nsp) # inlet conc
-    ΔT = Tmax - T_min
+    ΔT = Tmax - Tmin
     ρcp_ref = (1 - m.ε) * m.ρcat * m.cp_cat
 
     sy = zeros(ndof(dm))
@@ -104,19 +105,18 @@ function _scales(sa, y0::Vector{Float64}, T_min::Float64, Tmax::Float64)
         end
         d = dof(dm, c, nsp + 1)
         sy[d] = ΔT # T scaling
-        y_off[d] = T_min # T offset
+        y_off[d] = Tmin # T offset
         sc[d] = 1 / (ρcp_ref * V * ΔT)
     end
     return sy, y_off, sc
 end
 
 function MethanationOCP(sa, tab, Δt::Float64, Ne::Int, y0::Vector{Float64};
-    Tw_min, Tw_max, Tmax,
-    T_min=min(Tw_min, minimum(@view y0[fielddof(sa.prob.dm, :T)])) - 50.0,
+    Tw_min, Tw_max, Tmax, Tmin=min(Tw_min, minimum(@view y0[fielddof(sa.prob.dm, :T)])) - 50.0,
     x_floor=1e-8, x_floor_H2=1e-3, γ=0.0, co2_in=nothing)
 
     dm, m = sa.prob.dm, sa.prob.model
-    sy, y_off, sc = _scales(sa, y0, Float64(T_min), Float64(Tmax))
+    sy, y_off, sc = _scales(sa, y0, Float64(Tmin), Float64(Tmax))
 
     bfs_out, bfg_out = sa.ebnd[2]
     co2_dofs = [dof(dm, c, :CO2) for c in bfs_out.cells]
@@ -129,7 +129,7 @@ function MethanationOCP(sa, tab, Δt::Float64, Ne::Int, y0::Vector{Float64};
     wall_dofs = findall(!iszero, sa.prob.f_wall)
 
     return MethanationOCP(sa, tab, Δt, Ne, nstages(tab), ndof(dm), copy(y0),
-        Tw_min, Tw_max, Tmax, T_min, x_floor, x_floor_H2,
+        Tw_min, Tw_max, Tmax, Tmin, x_floor, x_floor_H2,
         sy, y_off, sc, Tw_max - Tw_min, Tw_min,
         γ, co2_dofs, co2_w, Fin, mdiag, wall_dofs, Dict{DataType,Any}())
 end
@@ -259,11 +259,11 @@ end
 function co2_conv(ocp::MethanationOCP, Z::AbstractMatrix)
     X = Vector{Float64}(undef, size(Z, 2))
     for col in axes(Z, 2)
-        nout = 0.0
+        co2_out = 0.0
         for j in eachindex(ocp.co2_dofs)
-            nout += ocp.co2_w[j] * Z[ocp.co2_dofs[j], col]
+            co2_out += ocp.co2_w[j] * Z[ocp.co2_dofs[j], col]
         end
-        X[col] = 1 - nout / ocp.co2_in
+        X[col] = 1 - co2_out / ocp.co2_in
     end
     return X
 end
@@ -295,7 +295,7 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64})
         Zl[fd, :] .= field === :H2 ? ocp.x_floor_H2 : ocp.x_floor
     end
     Td = fielddof(dm, dm.fields[nsp+1]) # T path constr
-    @views @. Zl[Td, :] = (ocp.T_min - ocp.y_off[Td]) / ocp.sy[Td]
+    @views @. Zl[Td, :] = (ocp.Tmin - ocp.y_off[Td]) / ocp.sy[Td]
     @views @. Zu[Td, :] = (ocp.Tmax - ocp.y_off[Td]) / ocp.sy[Td]
     Zl[:, 1] .= view(z0, 1:n) # initial cond
     Zu[:, 1] .= view(z0, 1:n)
@@ -324,7 +324,8 @@ end
 
 function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97", kwargs...)
     nlp = build_ocp(ocp, x0)
-    stats = ipopt(nlp; hessian_approximation="limited-memory",
+    stats = ipopt(nlp; hessian_approximation="limited-memory", mu_strategy="adaptive", 
+        acceptable_tol=1e-4, acceptable_iter=3,
         bound_relax_factor=0.0, bound_push=1e-6, bound_frac=1e-6,
         hsl_options(linear_solver)..., kwargs...)
     Z, u = unscale_z(ocp, stats.solution)

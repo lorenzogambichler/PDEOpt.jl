@@ -1,11 +1,41 @@
 ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "4")
 using LinearAlgebra
 using SparseArrays
+using WriteVTK
 using PDEOpt
 
 includet("../../src/optimization/methanation_adnlp.jl")
 
 const SPECIES = (:CH4, :CO, :CO2, :H2O, :H2, :N2)
+
+function write_state(path::String, prob::ProblemCache, y::AbstractMatrix, Δt::Float64, N::Int)
+    grid = prob.grid
+    nz, nr = grid.nz, grid.nr
+    mkpath(dirname(path))
+    paraview_collection(path) do pvd
+        for n = 1:N
+            t = (n - 1) * Δt
+            vtk_grid("$(path)_$(n)", grid.z, grid.r) do vtk
+                for field in prob.dm.fields
+                    fd = fielddof(prob.dm, field)
+                    # cell-index order
+                    vtk[string(field), VTKCellData()] = permutedims(reshape(y[fd, n], nr, nz))
+                end
+                pvd[t] = vtk
+            end
+        end
+    end
+end
+
+function write_control(path::String, u::AbstractVector, Δt::Float64, N::Int)
+    mkpath(dirname(path))
+    open(path, "w") do io
+        println(io, "t,Tw")
+        for n = 1:N
+            println(io, (n - 1) * Δt, ",", u[n])
+        end
+    end
+end
 
 function setup_problem(; nz=25, nr=4, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     grid = StructGrid2D(L, R, nz, nr)
@@ -150,7 +180,7 @@ function main()
     # Solve
     res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-6)
 
-    # Print results
+    # Print res
     Xguess = co2_conv(ocp, Zguess)
     Xopt = co2_conv(ocp, res.Z)
     println("status: ", res.stats.status)
@@ -160,5 +190,11 @@ function main()
     println("mean X_CO2: guess -> ", round(mean_co2_conv(ocp, Zguess); digits=4),
         ", opt -> ", round(mean_co2_conv(ocp, res.Z); digits=4))
     println("Tw: ", round.(res.u; digits=1))
-    return res
+
+    # Save res
+    resultsdir = joinpath(@__DIR__, "results/Methanation/")
+    write_state(joinpath(resultsdir, "opt_state"), prob, res.Z, Δt, Ne+1)
+    write_state(joinpath(resultsdir, "guess_state"), prob, Zguess, Δt, Ne+1)
+    write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
+    write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
 end
