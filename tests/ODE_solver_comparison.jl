@@ -1,4 +1,3 @@
-# Prototype / scoping experiment.
 # Compare self-written Crank–Nicolson against adaptive OrdinaryDiffEq solvers for same problem
 # M ẏ = f(y) = -K y + r(y) + b(t), ∂f/∂y = -K + Jr(y).
 

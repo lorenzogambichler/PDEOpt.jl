@@ -363,6 +363,43 @@ function ocp_obj(ocp::MethanationOCP, z)
     return J_conv / Ne + ocp.γ * Ne * J_reg
 end
 
+# Analytic grad
+function ocp_grad!(g::AbstractVector, ocp::MethanationOCP, z::AbstractVector)
+    n, s, Ne = ocp.n, ocp.s, ocp.Ne
+    nz = n * ncols(ocp)
+    fill!(g, zero(eltype(g)))
+
+    # ∂f/∂Z[d,col(k,i)] = b_i·co2_w[j]·sy[d] / (co2_in·Ne)
+    for k in 1:Ne, i in 1:s
+        base = (stagecol(ocp, k, i) - 1) * n
+        bi = ocp.tab.b[i] / (ocp.co2_in * Ne)
+        for j in eachindex(ocp.co2_dofs)
+            d = ocp.co2_dofs[j]
+            g[base+d] = bi * ocp.co2_w[j] * ocp.sy[d]
+        end
+    end
+
+    # ∂f/∂u[k] = 2γ·Ne·[(u_k − u_{k−1}) − (u_{k+1} − u_k)]
+    q = 2 * ocp.γ * Ne
+    u = view(z, nz+1:nz+Ne)
+    for k in 1:Ne
+        gk = zero(eltype(g))
+        if k > 1
+            (gk += u[k] - u[k-1])
+        end
+        if k < Ne 
+            (gk -= u[k+1] - u[k])
+        end
+        g[nz+k] = q * gk
+    end
+    return g
+end
+
+struct OCPGradient{TO} <: ADNLPModels.ADBackend
+    ocp::TO
+end
+ADNLPModels.gradient!(b::OCPGradient, g, f, x) = ocp_grad!(g, b.ocp, x)
+
 # X_CO2(t) = 1 − ṅ_CO2out(t)/ṅ_CO2in (outlet)
 function co2_conv(ocp::MethanationOCP, Z::AbstractMatrix)
     X = Vector{Float64}(undef, size(Z, 2))
@@ -435,8 +472,10 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64};
     f = z -> ocp_obj(ocp, z)
     c! = (cx, z) -> ocp_cons!(ocp, cx, z)
 
+    gb = OCPGradient(ocp)
+
     exact_hessian || return ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
-        hessian_backend=ZeroHessian)
+        gradient_backend=gb, hessian_backend=ZeroHessian)
 
     # Jacobian from ADNLPModels (precomputed pattern -> no tracer)
     # Hessian from local kernel assembly in methanation_hessian.jl
@@ -445,7 +484,7 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64};
     tj = @elapsed jb = ADNLPModels.SparseADJacobian(nv, f, nc_, c!, patJ; x0=z0, show_time)
     show_time && println("  • Jacobian backend: $(round(tj, digits=1)) s, $(nnz(patJ)) nnz.")
     inner = ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
-        jacobian_backend=jb, hessian_backend=ZeroHessian)
+        gradient_backend=gb, jacobian_backend=jb, hessian_backend=ZeroHessian)
     th = @elapsed H = OCPHessian(ocp)
     show_time && println("  • Hessian structure: $(round(th, digits=1)) s, $(nnzh(H)) nnz.")
     return KernelHessNLP(inner, H)
