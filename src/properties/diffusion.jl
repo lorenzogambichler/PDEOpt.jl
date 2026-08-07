@@ -14,13 +14,15 @@ end
 
 # Kee et al.
 # D_r,α = Σ_{j≠α} (ρ_j/M_j) / Σ_{j≠α} (ρ_j/M_j)/D_αj
-function mixture_D(α::Int, c, Dbin, nsp::Int)
-    num = 0.0
-    den = 0.0
-    @inbounds for j in 1:nsp
+# D_αj = Dfac[α,j]·T^1.75/p_bar
+function mixture_D(α::Int, c::NTuple{N,Any}, Dfac::AbstractMatrix, T175, pbar) where {N}
+    Tv = promote_type(eltype(c), typeof(T175), typeof(pbar))
+    num = zero(Tv)
+    den = zero(Tv)
+    @inbounds for j in 1:N
         j == α && continue
         num += c[j]
-        den += c[j] / Dbin[α, j]
+        den += c[j] / (Dfac[α, j] * T175 / pbar)
     end
     #return den > 0 ? num / den : zero(num)
     return num / max(den, 1e-30)

@@ -29,7 +29,8 @@ export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advect
 # FVM assembly
 export advection_flux, diffusion_flux,
     assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
-    assemble_react!, assemble_boundary!, StateAssembly
+    assemble_react!, assemble_boundary!, StateAssembly,
+    face_flux, bnd_energy_kernel
 
 # Tensor grid connectivity, geometry, DOF map, sparsitiy pattern
 export AbstractGrid, AbstractGeometry,
@@ -42,7 +43,8 @@ export AbstractGrid, AbstractGeometry,
 export AbstractModel, PlugFlowModel, PSAModel, MethanationModel, MethanationProps,
     Reaction, Arrhenius, AdsorptionLDF,
     fields, transported, state_dependent, diffusivity, velocity, nspecies,
-    reaction!, reaction_jac!, reaction_jac_fd!, reaction_source, properties!,
+    reaction!, reaction_jac!, reaction_jac_fd!, reaction_source, properties!, props_cell,
+    nspecies_val, nfields_val, reaction_cell, capacity_cell, capacity,
     inlet_value, wall_coeff, wall_field, inlet_mod, wall_mod
 
 # Assembled-problem container

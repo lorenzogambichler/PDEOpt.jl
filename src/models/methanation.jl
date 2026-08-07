@@ -71,6 +71,8 @@ end
 
 fields(m::MethanationModel) = m.fields
 nspecies(m::MethanationModel) = length(m.M)
+nspecies_val(m::MethanationModel) = Val(length(m.M)) # avoid allocatios in ntuple()
+nfields_val(m::MethanationModel) = Val(length(m.M) + 1)
 state_dependent(::MethanationModel) = true
 
 velocity(m::MethanationModel, axis::Int) = axis == 1 ? m.vz : 0.0
@@ -82,7 +84,6 @@ wall_mod(m::MethanationModel, t::Real) = m.T_wall(t)
 
 # Property cache
 struct MethanationProps{T}
-    # general
     ρ::Vector{T} # mass density, kg/m³
     ρM::Vector{T} # molar density Σ ρ_α/M_α, mol/m³
     p::Vector{T} # total pressure, Pa
@@ -92,82 +93,80 @@ struct MethanationProps{T}
     ρcp::Vector{T} # (ρcp)^eff
     ρcp_flow::Vector{T} # ρ·cp,gas
     λeff::Vector{T} # eff rad conductivity λ^eff_r
-    # temporary (overwritten each cell)
-    cpα::Vector{T}
-    μα::Vector{T}
-    λα::Vector{T}
-    Dbin::Matrix{T} # binary diffusion (nsp × nsp)
 end
 function MethanationProps{T}(nsp::Int, ncells::Int) where {T}
     z1() = zeros(T, ncells)
     z2() = zeros(T, nsp, ncells)
-    MethanationProps{T}(z1(), z1(), z1(), z2(), z2(), z2(), z1(), z1(), z1(),
-        zeros(T, nsp), zeros(T, nsp), zeros(T, nsp), zeros(T, nsp, nsp))
+    MethanationProps{T}(z1(), z1(), z1(), z2(), z2(), z2(), z1(), z1(), z1())
 end
 MethanationProps(nsp::Int, ncells::Int) = MethanationProps{Float64}(nsp, ncells)
 
-# Properties, y -> props
-# 1) ρ, ρM, x, c -> 2) p (id. gas) -> 3) cp, μ, λ per species -> 
+# Per-cell property kernel, yc -> props
+# 1) ρ, ρM, x, c -> 2) p (id. gas) -> 3) cp, μ, λ per species ->
 # 4) cp_gas, (ρcp)^eff -> 5) λ_gas, λ^eff_r -> 6) D_ij, D_r,α, D^eff_r,α
+function props_cell(m::MethanationModel, yc)
+    nsp = nspecies(m)
+    nspv = nspecies_val(m)
+    Rgas = 8.314
+    Tv = eltype(yc)
+    T = yc[nsp+1]
+    Mw, Dfac, ε, vz, dp = m.M, m.Dfac, m.ε, m.vz, m.dp
+
+    # composition
+    c = ntuple(α -> yc[α] / Mw[α], nspv)
+    ρ = zero(Tv)
+    ρM = zero(Tv)
+    @inbounds for α in 1:nsp
+        ρ += yc[α]
+        ρM += c[α]
+    end
+    #x[α] = ρM > 0 ? c[α] / ρM : 0.0
+    ρMs = max(ρM, 1e-30)
+    x = ntuple(α -> c[α] / ρMs, nspv)
+
+    # pressure (id. gas)
+    # For Ergun, replace with axial sweep (TODO)
+    # (p = p_in + Σ ergun_dpdz(vz, μmix, ρ, ε, dp)·Δz)
+    p = ρM * Rgas * T
+
+    # T-dependent properties (species)
+    cpα = map(P -> P(T), m.cp_corr)
+    μα = map(P -> P(T), m.μ_corr)
+    λα = map(P -> P(T), m.λ_corr)
+
+    # heat capacity
+    cp_gas = mix_cp(yc, cpα, ρ)
+    ρcp = eff_capacity(ε, m.ρcat, m.cp_cat, ρ, cp_gas)
+    ρcp_flow = ρ * cp_gas
+
+    # conductivity
+    λ_gas = mix_conductivity(c, λα, μα, Mw)
+    λeff = lambda_eff_r(T, ρ, cp_gas, λ_gas, ε, m.ε_cat, dp, m.Rrad, vz; λ_rs=m.λ_rs)
+
+    # diffusion, binary -> mixture-average -> effective radial dispersion
+    T175 = T^1.75
+    pbar = p / 1e5
+    Deff = ntuple(α -> tsotsas_Deff(mixture_D(α, c, Dfac, T175, pbar), ε, vz, dp), nspv)
+
+    return (ρ=ρ, ρM=ρM, p=p, x=x, c=c, Deff=Deff, ρcp=ρcp, ρcp_flow=ρcp_flow, λeff=λeff)
+end
+
+# Properties, y -> props (scatter props_cell over mesh)
 function properties!(m::MethanationModel, props::MethanationProps, y::AbstractVector)
     nsp = nspecies(m)
     N = nsp + 1 # T
-    ncells = length(props.ρ)
-    Rgas = 8.314
-    Tv = eltype(y)
-    @inbounds for cell in 1:ncells
-        base = (cell - 1) * N
-        T = y[base+N]
-        ρview = view(y, base+1:base+nsp)
-
-        # composition
-        ρ = zero(Tv); ρM = zero(Tv)
-        for α in 1:nsp
-            cα = ρview[α] / m.M[α]
-            props.c[α, cell] = cα
-            ρ += ρview[α]
-            ρM += cα
-        end
-        props.ρ[cell] = ρ
-        props.ρM[cell] = ρM
-        for α in 1:nsp
-            #props.x[α, cell] = ρM > 0 ? props.c[α, cell] / ρM : 0.0
-            props.x[α, cell] = props.c[α, cell] / max(ρM, 1e-30)
-        end
-
-        # pressure (id. gas)
-        # For Ergun, replace with axial sweep
-        # (p[cell] = p_in + Σ ergun_dpdz(vz, μmix, ρ, ε, dp)·Δz)
-        p = ρM * Rgas * T
-        props.p[cell] = p
-
-        # T-dependent properties (species)
-        for α in 1:nsp
-            props.cpα[α] = m.cp_corr[α](T)
-            props.μα[α] = m.μ_corr[α](T)
-            props.λα[α] = m.λ_corr[α](T)
-        end
-
-        # heat capacity
-        cp_gas = mix_cp(ρview, props.cpα, ρ, nsp)
-        props.ρcp[cell] = eff_capacity(m.ε, m.ρcat, m.cp_cat, ρ, cp_gas)
-        props.ρcp_flow[cell] = ρ * cp_gas
-
-        # conductivity
-        λ_gas = mix_conductivity(view(props.c, :, cell), props.λα, props.μα, m.M, nsp)
-        props.λeff[cell] = lambda_eff_r(T, ρ, cp_gas, λ_gas, m.ε, m.ε_cat,
-            m.dp, m.Rrad, m.vz; λ_rs=m.λ_rs)
-
-        # diffusion, binary -> mixture-average -> effective radial dispersion
-        T175 = T^1.75
-        pbar = p / 1e5
-        for i in 1:nsp, j in 1:nsp
-            props.Dbin[i, j] = m.Dfac[i, j] * T175 / pbar
-        end
-        for α in 1:nsp
-            Dr = mixture_D(α, view(props.c, :, cell), props.Dbin, nsp)
-            props.Deff[α, cell] = tsotsas_Deff(Dr, m.ε, m.vz, m.dp)
-        end
+    @inbounds for cell in 1:length(props.ρ)
+        P = props_cell(m, view(y, (cell-1)*N+1:cell*N))
+        props.ρ[cell] = P.ρ
+        props.ρM[cell] = P.ρM
+        props.p[cell] = P.p
+        props.ρcp[cell] = P.ρcp
+        props.ρcp_flow[cell] = P.ρcp_flow
+        props.λeff[cell] = P.λeff
+        col = (cell - 1) * nsp + 1
+        copyto!(props.c, col, P.c, 1, nsp)
+        copyto!(props.x, col, P.x, 1, nsp)
+        copyto!(props.Deff, col, P.Deff, 1, nsp)
     end
     return props
 end
@@ -249,6 +248,19 @@ function reaction!(m::MethanationModel, re, yc)
     re[nsp+1] = -(1 - m.ε) * (m.ΔHr[1] * r̃[1] + m.ΔHr[2] * r̃[2] + m.ΔHr[3] * r̃[3])
     return re
 end
+
+# Kernel reaction!
+@inline function reaction_cell(m::MethanationModel, yc)
+    r̃ = _rates(m, yc)
+    ν, Mw, ε = m.ν, m.M, m.ε
+    sp = ntuple(α -> (1 - ε) * Mw[α] * (ν[1][α] * r̃[1] + ν[2][α] * r̃[2] + ν[3][α] * r̃[3]),
+        nspecies_val(m))
+    return (sp..., -(1 - ε) * (m.ΔHr[1] * r̃[1] + m.ΔHr[2] * r̃[2] + m.ΔHr[3] * r̃[3]))
+end
+
+# Mass-matrix coeff from a local property set (cf. capacity)
+@inline capacity_cell(m::MethanationModel, P, fi::Int) =
+    fi == nspecies(m) + 1 ? P.ρcp : m.ε
 
 # Finite diff jac
 # TODO: analytic/ForwardDiff jac

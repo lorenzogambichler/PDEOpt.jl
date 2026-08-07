@@ -9,6 +9,8 @@ using LinearAlgebra
 using ADNLPModels
 using NLPModelsIpopt
 using HSL_jll
+using Serialization
+import ForwardDiff
 
 # Prevent BFGS hessian from being densely populated with zeros
 struct ZeroHessian <: ADNLPModels.ADBackend end
@@ -219,10 +221,116 @@ function _residual!(cx, z, ocp::MethanationOCP, prob, saT, buf)
 
             row = ((k - 1) * s + i - 1) * n
             cb = view(cx, row+1:row+n)
-            Mnz = nonzeros(prob.M) # M is diagonal -> skip structural zeros
+            Mnz = nonzeros(prob.M) # M diagonal -> skip structural zeros
             @views @. cb = Mnz[ocp.mdiag] * w
             mul!(Kv, prob.K, yp)
             @. cb = (cb + Δt * Kv - Δt * prob.r - Δt * b) * sc # row scaling
+        end
+    end
+    return cx
+end
+
+# Kernel collocation residual (local)
+# Same as _residual!, but with local kernels instead of global assembly
+# Used only for jac/hess assembly
+function _residual_kernels!(cx, z, ocp::MethanationOCP)
+    sa = ocp.sa
+    p0 = sa.prob
+    m, dm, grid, geom = p0.model, p0.dm, p0.grid, p0.geom
+    n, s, Ne, Δt = ocp.n, ocp.s, ocp.Ne, ocp.Δt
+    nsp = nspecies(m)
+    nf = nsp + 1
+    fiT = nf
+    nzv = n * ncols(ocp)
+    Z = reshape(view(z, 1:nzv), n, ncols(ocp))
+    u = view(z, nzv+1:nzv+Ne)
+    tab = ocp.tab
+    sy, y_off, sc = ocp.sy, ocp.y_off, ocp.sc
+    Tv = eltype(z)
+
+    yp = zeros(Tv, n)
+    w = zeros(Tv, n)
+    acc = zeros(Tv, n)
+    Kbcv = zeros(Tv, n)
+
+    for k in 1:Ne
+        ykm1 = view(Z, :, leftcol(ocp, k))
+        uk = ocp.u_off + ocp.su * u[k]
+
+        for i in 1:s
+            Yi = view(Z, :, stagecol(ocp, k, i))
+            @. yp = y_off + sy * Yi
+
+            d0i = tab.d0[i]
+            @. w = -d0i * ykm1
+            for j in 1:s
+                Yj = view(Z, :, stagecol(ocp, k, j))
+                dij = tab.D[i, j]
+                @. w += dij * Yj
+            end
+            @. w *= sy
+
+            ti = stage_time(tab, k, i, Δt)
+            fill!(acc, zero(Tv))
+
+            # cell kernels, M(y)·w and reaction source
+            for c in 1:ncells(grid)
+                ci, cj = cellij(grid, c)
+                vol = cellvolume(geom, ci, cj)
+                cd = celldof(dm, c)
+                yc = view(yp, cd)
+                P = props_cell(m, yc)
+                re = reaction_cell(m, yc)
+                for fi in 1:nf
+                    d = cd[fi]
+                    acc[d] += vol * capacity_cell(m, P, fi) * w[d] - Δt * vol * re[fi]
+                end
+            end
+
+            # face kernels, state-dependent transport
+            for (fs, fg) in sa.dirs
+                for e in eachindex(fs.owner)
+                    o, nb = fs.owner[e], fs.neighbor[e]
+                    od, nd = celldof(dm, o), celldof(dm, nb)
+                    F = face_flux(m, view(yp, od), view(yp, nd),
+                        fs.axis, fg.area[e], fg.dist[e], fg.wf[e])
+                    for fi in 1:nf
+                        acc[od[fi]] += Δt * F[fi]
+                        acc[nd[fi]] -= Δt * F[fi]
+                    end
+                end
+            end
+
+            # constant boundary transport (species inlet/outlet + wall), no Hessian
+            mul!(Kbcv, sa.K_bc, yp)
+            @. acc += Δt * Kbcv
+
+            # state-dependent energy advection at inlet/outlet
+            mdT = inlet_mod(m, dm.fields[fiT], ti)
+            for (bfs, bfg) in sa.ebnd
+                βn = velocity(m, bfs.axis) * bfs.side
+                for q in eachindex(bfs.cells)
+                    c = bfs.cells[q]
+                    gc = dof(dm, c, fiT)
+                    _, cj = cellij(grid, c)
+                    Kd, fin = bnd_energy_kernel(m, view(yp, celldof(dm, c)),
+                        βn, bfg.area[q], geom.rc[cj])
+                    acc[gc] += Δt * (Kd * yp[gc] - fin * mdT)
+                end
+            end
+
+            # constant species inlet forcing + wall control
+            for fi in 1:nsp
+                fd = fielddof(dm, dm.fields[fi])
+                md = inlet_mod(m, dm.fields[fi], ti)
+                @views @. acc[fd] -= Δt * p0.f_in[fd] * md
+            end
+            for d in ocp.wall_dofs
+                acc[d] -= Δt * p0.f_wall[d] * uk
+            end
+
+            row = ((k - 1) * s + i - 1) * n
+            @views @. cx[row+1:row+n] = acc * sc
         end
     end
     return cx
@@ -278,7 +386,26 @@ function mean_co2_conv(ocp::MethanationOCP, Z::AbstractMatrix)
     return Xbar / ocp.Ne
 end
 
-function build_ocp(ocp::MethanationOCP, x0::Vector{Float64})
+# jac sparsity pattern
+function jac_pattern(ocp::MethanationOCP, z0::Vector{Float64}; cache::String="")
+    key = (nvars(ocp), ncons(ocp), ocp.n, ocp.s, ocp.Ne)
+    if !isempty(cache) && isfile(cache)
+        stored = deserialize(cache)
+        stored.key == key && return J=stored.J
+        @warn "sparsity cache dimension mismatch, retracing" cache stored.key key
+    end
+    # Compute pattern
+    cx = zeros(ncons(ocp))
+    J = ADNLPModels.compute_jacobian_sparsity((c, z) -> ocp_cons!(ocp, c, z), cx, z0)
+    isempty(cache) || serialize(cache, (key=key, J=J))
+    return J
+end
+
+include("methanation_hessian.jl")
+
+function build_ocp(ocp::MethanationOCP, x0::Vector{Float64};
+    exact_hessian::Bool=false, sparsity_cache::String="",
+    hessian_backend=[], show_time::Bool=false)
     n, nc = ocp.n, ncols(ocp)
     nz = n * nc
     dm = ocp.sa.prob.dm
@@ -305,9 +432,23 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64})
     lcon = zeros(ncons(ocp))
     ucon = zeros(ncons(ocp))
 
-    return ADNLPModel!(z -> ocp_obj(ocp, z), z0, lvar, uvar,
-        (cx, z) -> ocp_cons!(ocp, cx, z), lcon, ucon;
+    f = z -> ocp_obj(ocp, z)
+    c! = (cx, z) -> ocp_cons!(ocp, cx, z)
+
+    exact_hessian || return ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
         hessian_backend=ZeroHessian)
+
+    # Jacobian from ADNLPModels (precomputed pattern -> no tracer)
+    # Hessian from local kernel assembly in methanation_hessian.jl
+    patJ = jac_pattern(ocp, z0; cache=sparsity_cache)
+    nv, nc_ = nvars(ocp), ncons(ocp)
+    tj = @elapsed jb = ADNLPModels.SparseADJacobian(nv, f, nc_, c!, patJ; x0=z0, show_time)
+    show_time && println("  • Jacobian backend: $(round(tj, digits=1)) s, $(nnz(patJ)) nnz.")
+    inner = ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
+        jacobian_backend=jb, hessian_backend=ZeroHessian)
+    th = @elapsed H = OCPHessian(ocp)
+    show_time && println("  • Hessian structure: $(round(th, digits=1)) s, $(nnzh(H)) nnz.")
+    return KernelHessNLP(inner, H)
 end
 
 # HSL opts
@@ -322,11 +463,14 @@ function hsl_options(linear_solver::String)
            merge(opts, (ma97_order="metis", ma97_scaling="none")) : opts
 end
 
-function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97", kwargs...)
-    nlp = build_ocp(ocp, x0)
-    stats = ipopt(nlp; hessian_approximation="limited-memory", mu_strategy="adaptive", 
+function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97",
+    exact_hessian::Bool=false, sparsity_cache::String="", show_time::Bool=false, kwargs...)
+    nlp = build_ocp(ocp, x0; exact_hessian, sparsity_cache, show_time)
+    hess_opts = exact_hessian ? (;) : (hessian_approximation="limited-memory",)
+    stats = ipopt(nlp; hess_opts..., mu_strategy="adaptive",
         acceptable_tol=1e-4, acceptable_iter=3,
         bound_relax_factor=0.0, bound_push=1e-6, bound_frac=1e-6,
+        print_timing_statistics="yes",
         hsl_options(linear_solver)..., kwargs...)
     Z, u = unscale_z(ocp, stats.solution)
     return (Z=Z, u=u, stats=stats)

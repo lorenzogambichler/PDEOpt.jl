@@ -43,7 +43,8 @@ export AbstractModel, transported, state_dependent,
     PlugFlowModel, fields, diffusivity, velocity, inlet_value,
     wall_coeff, wall_field, inlet_mod, wall_mod,
     # methanation
-    MethanationModel, MethanationProps, properties!, nspecies,
+    MethanationModel, MethanationProps, properties!, props_cell, nspecies,
+    nspecies_val, nfields_val, reaction_cell, capacity_cell,
     capacity, face_diffusivity, face_velocity,
     # PSA
     PSAModel, AdsorptionLDF

@@ -1,9 +1,9 @@
 # Heat capacity
 
 # cp,gas = Σ(ρ_α/ρ)cpα in J/(kg K), ρ = Σρα
-function mix_cp(ρα, cpα, ρ, nsp::Int)
-    s = 0.0
-    @inbounds for α in 1:nsp
+function mix_cp(ρα, cpα::NTuple{N,Any}, ρ) where {N}
+    s = zero(promote_type(eltype(ρα), eltype(cpα)))
+    @inbounds for α in 1:N
         s += ρα[α] * cpα[α]
     end
     #return ρ > 0 ? s / ρ : zero(s)

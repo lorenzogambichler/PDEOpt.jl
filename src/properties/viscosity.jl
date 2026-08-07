@@ -9,9 +9,10 @@ end
 
 # μ_mix = Σ_α x_α μ_α / Σ_β x_β φ_αβ
 function mix_viscosity(x, μ, M, nsp::Int)
-    μmix = 0.0
+    Tv = promote_type(eltype(x), eltype(μ))
+    μmix = zero(Tv)
     @inbounds for α in 1:nsp
-        den = 0.0
+        den = zero(Tv)
         for β in 1:nsp
             den += x[β] * wilke_phi(μ[α], μ[β], M[α], M[β])
         end

@@ -178,7 +178,8 @@ function main()
     println("init guess: max T = ", round(Tg; digits=1), " K")
 
     # Solve
-    res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-6)
+    res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-6, exact_hessian=false, show_time=true, 
+        limited_memory_max_history=75) # 30 -> 85 it, 75 -> 69 it
 
     # Print res
     Xguess = co2_conv(ocp, Zguess)
@@ -192,9 +193,9 @@ function main()
     println("Tw: ", round.(res.u; digits=1))
 
     # Save res
-    resultsdir = joinpath(@__DIR__, "results/Methanation/")
-    write_state(joinpath(resultsdir, "opt_state"), prob, res.Z, Δt, Ne+1)
-    write_state(joinpath(resultsdir, "guess_state"), prob, Zguess, Δt, Ne+1)
-    write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
-    write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
+    #resultsdir = joinpath(@__DIR__, "results/Methanation/")
+    #write_state(joinpath(resultsdir, "opt_state"), prob, res.Z, Δt, Ne+1)
+    #write_state(joinpath(resultsdir, "guess_state"), prob, Zguess, Δt, Ne+1)
+    #write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
+    #write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
 end

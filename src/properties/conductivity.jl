@@ -2,11 +2,12 @@
 
 # Wassiljewa
 # λ_gas = Σ_α (c_α λ_α) / Σ_β (c_β⋅φ_αβ) in W/(m K), c_α = ρ_α/M_α 
-function mix_conductivity(c, λ, μ, M, nsp::Int)
-    λmix = 0.0
-    @inbounds for α in 1:nsp
-        den = 0.0
-        for β in 1:nsp
+function mix_conductivity(c::NTuple{N,Any}, λ, μ, M) where {N}
+    Tv = promote_type(eltype(c), eltype(λ), eltype(μ))
+    λmix = zero(Tv)
+    @inbounds for α in 1:N
+        den = zero(Tv)
+        for β in 1:N
             den += c[β] * wilke_phi(μ[α], μ[β], M[α], M[β])
         end
         #den > 0 && (λmix += c[α] * λ[α] / den)

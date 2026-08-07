@@ -4,7 +4,8 @@ Time discretization and NLP structure for the full-space (direct transcription /
 simultaneous) methanation OCP. The spatial FVM is taken as given: it delivers the
 semi-discrete system in §1. Implementation:
 [`src/timestepping/collocation.jl`](../src/timestepping/collocation.jl),
-[`src/optimization/adnlp_ipopt.jl`](../src/optimization/adnlp_ipopt.jl).
+[`src/optimization/methanation_adnlp.jl`](../src/optimization/methanation_adnlp.jl).
+Second derivatives are treated separately in [`exact_hessian.md`](exact_hessian.md).
 
 ---
 

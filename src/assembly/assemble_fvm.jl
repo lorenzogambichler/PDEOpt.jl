@@ -8,7 +8,8 @@ import ..assemble_mass!
 
 export advection_flux, diffusion_flux,
     assemble_mass!, assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
-    assemble_react!, assemble_boundary!, StateAssembly
+    assemble_react!, assemble_boundary!, StateAssembly,
+    face_flux, bnd_energy_kernel
 
 function advection_flux(βn::Real, area::Real)
     F = βn * area
@@ -105,6 +106,40 @@ function assemble_transport!(K::AbstractSparseMatrix, props::MethanationProps,
         end
     end
     return K
+end
+
+# Kernel assemble_transport! (local)
+@inline function face_flux(m::AbstractModel, yo, yn, axis::Int, area, dist, wf)
+    nsp = nspecies(m)
+    Po = props_cell(m, yo)
+    Pn = props_cell(m, yn)
+    vz = m.vz
+    Z = zero(Po.ρcp_flow)
+    tr = ntuple(fi -> transported(m, fi), nfields_val(m))
+    return ntuple(nfields_val(m)) do fi
+        tr[fi] || return Z
+        if axis == 1
+            Df = Z
+            βf = fi == nsp + 1 ? (wf * Po.ρcp_flow + (1 - wf) * Pn.ρcp_flow) * vz : vz + Z
+        else
+            Df = fi == nsp + 1 ? wf * Po.λeff + (1 - wf) * Pn.λeff :
+                 wf * Po.Deff[fi] + (1 - wf) * Pn.Deff[fi]
+            βf = Z
+        end
+        k = diffusion_flux(Df, area, dist)
+        (co, cn) = advection_flux(βf, area)
+        k * (yo[fi] - yn[fi]) + co * yo[fi] + cn * yn[fi]
+    end
+end
+
+# Kernel assemble_energy_advection! (local)
+@inline function bnd_energy_kernel(m::AbstractModel, yc, βn, area, rc)
+    P = props_cell(m, yc)
+    coeff = βn * P.ρcp_flow
+    Z = zero(coeff)
+    βn > 0 && return (coeff * area, Z)
+    βn < 0 && return (Z, -coeff * area * inlet_value(m, :T, rc))
+    return (Z, Z)
 end
 
 # State-dependent reassembly (Methanation.jl)
