@@ -113,14 +113,32 @@ function resample(Y::AbstractMatrix, Δt::Float64, ts::AbstractVector)
     return Z
 end
 
+# CN forward solve for given Tw(t)
+function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothing)
+    prob, sa, _ = setup_problem(; Tw=Twfun)
+    N = round(Int, tf / Δt_cn) + 1
+    cache = CNCache(prob, Δt_cn, N)
+    for field in prob.dm.fields
+        set_ic!(cache, field, inlet_mod(prob.model, field, 0.0))
+    end
+    cn_solve!(cache,
+        (y, WithJac) -> assemble_react!(prob, y, WithJac),
+        (b, t) -> assemble_boundary!(prob, b, t),
+        shamanskii(refactor_every=20);
+        reassemble! = y -> (hook(y, prob); sa(y)))
+    return cache
+end
+
 # Feasible init guess (CN), resample onto collocation grid
-function forward_guess(tf, ts, Δt, Ne; Δt_cn=1.0, Tw_min=300.0, Tw_max=650.0,
+# 1) feedback law generates continuous Tw(t), extract piecewise constant u
+# 2) re-simulate with piecewise constant u
+function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
     Tset=680.0, Kp=10.0, τ=10.0)
     peak = Ref(0.0)
     Tw = Ref(Tw_max)
     tprev = Ref(-1.0)
     log = Tuple{Float64,Float64}[]
-    function Twfun(t)
+    function Twctl(t)
         if t > tprev[]
             raw = clamp(Tw_max - Kp * max(0.0, peak[] - Tset), Tw_min, Tw_max)
             a = min(1.0, (t - max(tprev[], 0.0)) / τ)
@@ -131,25 +149,20 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=1.0, Tw_min=300.0, Tw_max=650.0,
         return Tw[]
     end
 
-    prob, sa, _ = setup_problem(; Tw=Twfun)
-    Td = fielddof(prob.dm, :T)
-    N = round(Int, tf / Δt_cn) + 1
-    cache = CNCache(prob, Δt_cn, N)
-    for field in prob.dm.fields
-        set_ic!(cache, field, inlet_mod(prob.model, field, 0.0))
-    end
-    cn_solve!(cache,
-        (y, WithJac) -> assemble_react!(prob, y, WithJac),
-        (b, t) -> assemble_boundary!(prob, b, t),
-        shamanskii(refactor_every=20);
-        reassemble! = y -> (peak[] = maximum(@view y[Td]); sa(y)))
+    # 1) Continuous Tw(t)
+    cn_forward(Twctl, tf, Δt_cn;
+        hook=(y, prob) -> (peak[] = maximum(@view y[fielddof(prob.dm, :T)])))
 
     u = fill(Tw_max, Ne)
     for k in 1:Ne
         v = [w for (t, w) in log if (k - 1) * Δt <= t < k * Δt]
-        isempty(v) || (u[k] = sum(v) / length(v))
+        isempty(v) && error("no Tw samples in element $k; need Δt_cn ($Δt_cn) < Δt ($Δt)")
+        u[k] = sum(v) / length(v)
     end
-    return resample(cache.y, Δt_cn, ts), u
+
+    # 2) Re-simulate
+    uf(t) = u[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
+    return resample(cn_forward(uf, tf, Δt_cn).y, Δt_cn, ts), u
 end
 
 function main()
@@ -172,14 +185,14 @@ function main()
 
     # Initial guesses
     Zguess, uguess = forward_guess(tf, timegrid(ocp), Δt, Ne;
-        Δt_cn=1.0, Tw_min=Tw_min, Tw_max=Tw_max)
+        Tw_min=Tw_min, Tw_max=Tw_max)
     x0 = vcat(vec(Zguess), uguess)
     Tg = maximum(Zguess[fielddof(prob.dm, :T), :])
     println("init guess: max T = ", round(Tg; digits=1), " K")
 
     # Solve
     res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-5, exact_hessian=false, show_time=true, 
-        limited_memory_max_history=75) # 30 -> 85 it, 75 -> 69 it
+        limited_memory_max_history=75)
 
     # Print res
     Xguess = co2_conv(ocp, Zguess)

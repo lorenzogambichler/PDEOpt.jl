@@ -499,7 +499,7 @@ function hsl_options(linear_solver::String)
     end
     opts = (hsllib=HSL_jll.libhsl_path, linear_solver=linear_solver)
     return linear_solver == "ma97" ?
-           merge(opts, (ma97_order="metis", ma97_scaling="none")) : opts
+           merge(opts, (ma97_order="metis", ma97_scaling="none", ma97_nemin=8)) : opts # keep nemin low when ram is limiting factor
 end
 
 function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97",
