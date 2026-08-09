@@ -37,7 +37,7 @@ function write_control(path::String, u::AbstractVector, Δt::Float64, N::Int)
     end
 end
 
-function setup_problem(; nz=25, nr=4, L=5.0, R=0.01, Tw=650.0, vz=1.0)
+function setup_problem(; nz=25, nr=3, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     grid = StructGrid2D(L, R, nz, nr)
     geom = Geometry2D(grid)
 
@@ -139,54 +139,43 @@ function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothi
     return cache
 end
 
-# Feasible init guess (CN), resample onto collocation grid
-# 1) feedback law generates continuous Tw(t), extract piecewise constant u
-# 2) re-simulate with piecewise constant u
-function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
-    Tset=680.0, Kp=10.0, τ=10.0, recon::Symbol=:vanalbada)
-    peak = Ref(0.0)
-    Tw = Ref(Tw_max)
-    tprev = Ref(-1.0)
-    log = Tuple{Float64,Float64}[]
-    function Twctl(t)
-        if t > tprev[]
-            raw = clamp(Tw_max - Kp * max(0.0, peak[] - Tset), Tw_min, Tw_max)
-            a = min(1.0, (t - max(tprev[], 0.0)) / τ)
-            Tw[] += a * (raw - Tw[])
-            tprev[] = t
-            push!(log, (t, Tw[]))
-        end
-        return Tw[]
-    end
-
-    # 1) Continuous Tw(t)
-    cn_forward(Twctl, tf, Δt_cn; recon=recon,
-        hook=(y, prob) -> (peak[] = maximum(@view y[fielddof(prob.dm, :T)])))
-
+# TODO Fix init guess
+function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.5, Tw_min=300.0, Tw_max=650.0,
+    gmax = 50, ω=0.7, δ=5.0, recon::Symbol=:vanalbada)
     u = fill(Tw_max, Ne)
-    for k in 1:Ne
-        v = [w for (t, w) in log if (k - 1) * Δt <= t < k * Δt]
-        isempty(v) && error("no Tw samples in element $k; need Δt_cn ($Δt_cn) < Δt ($Δt)")
-        u[k] = sum(v) / length(v)
+    Ttgt = Tmax - δ
+    for it in 1:itmax
+        peak = fill(-Inf, Ne)
+        cache = cn_forward(t -> u[clamp(floor(Int, t/Δt)+1, 1, Ne)], tf, Δt_cn; recon,
+            hook = (y, prob) -> begin
+                k = clamp(floor(Int, tnow/Δt)+1, 1, Ne)
+                peak[k] = max(peak[k], maximum(@view y[fielddof(prob.dm, :T)]))
+            end)
+        diff = maximum(peak) - Ttgt
+        diff <= 0 && return resample(cache.y, Δt_cn, ts), u
+        for k in 1:Ne
+            if it == 1
+                g = 10.0
+            else 
+                g = 0.0 # TODO
+                clamp(g, 1.0, gmax)
+            end
+            peak[k] > Ttgt && (u[k] = max(Tw_min, u[k] - ω*g*(peak[k] - Ttgt)))
+        end
     end
-
-    # 2) Re-simulate
-    uf(t) = u[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
-    return resample(cn_forward(uf, tf, Δt_cn; recon=recon).y, Δt_cn, ts), u
 end
 
 function main(; recon::Symbol=:vanalbada)
     # Params
-    tf = 750.0
+    tf = 700.0
     Ne = 30 # finite elements
     s = 3 # radau IIA stages
     Δt = tf / Ne # ideally 25s
-    Tw_nom = 600.0
     Tw_min, Tw_max, Tmax = 300.0, 650.0, 750.0
     γ = 0.01
 
     # Problem
-    prob, sa, y0 = setup_problem(; Tw=Tw_nom)
+    prob, sa, y0 = setup_problem()
 
     # OCP
     co2_in = co2_inflow(sa) # inlet flowrate CO2
@@ -195,7 +184,7 @@ function main(; recon::Symbol=:vanalbada)
 
     # Initial guesses
     Zguess, uguess = forward_guess(tf, timegrid(ocp), Δt, Ne;
-        Tw_min=Tw_min, Tw_max=Tw_max, recon=recon)
+        Tset=600.0, Tw_min=Tw_min, Tw_max=Tw_max, recon=recon)
     x0 = vcat(vec(Zguess), uguess)
 
     # Check ϵ

@@ -4,13 +4,6 @@ using SparseArrays
 using WriteVTK
 using PDEOpt
 
-#=
-TODO:
-- Add Robin BC for wall (Twall)
-- Add p-field (algebraic, ergun)
-- Add T- and p-dependence for D and λ
-=#
-
 struct ProblemCache{Tdh,Tcv,F1,F2,F3}
     M::SparseMatrixCSC{Float64,Int} # mass
     K::SparseMatrixCSC{Float64,Int} # advection + diffusion (constant)
