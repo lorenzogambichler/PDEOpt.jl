@@ -125,7 +125,8 @@ function boundary_faces(g::StructGrid1D)
 end
 
 # Geometry
-export Geometry1D, Geometry2D, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry
+export Geometry1D, Geometry2D, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry,
+    UpwindStencil
 
 struct Geometry2D <: AbstractGeometry
     dz::Vector{Float64} # axial widths (nz)
@@ -211,6 +212,50 @@ function FaceGeometry(g::StructGrid1D, geom::Geometry1D, fs::FaceSet)
         wf[f] = dn_ / (do_ + dn_)
     end
     return FaceGeometry(area, dist, wf)
+end
+
+# Upwind-biased reconstruction stencil (2nd order axial advection)
+# a = (y_o - y_uu)/hu, b = (y_n - y_o)/hd, y_face = y_o + ψ(a,b)·df
+# 1st-order at inlet (upup = owner -> a = 0 -> ψ = 0)
+struct UpwindStencil
+    upup::Vector{Int} # 2nd upwind cell
+    hu::Vector{Float64} # upwind centroid spacing z_c(i) − z_c(i−1)
+    hd::Vector{Float64} # downwind centroid spacing z_c(i+1) − z_c(i)
+    df::Vector{Float64} # owner centroid -> face dist
+end
+
+function UpwindStencil(g::StructGrid2D, geom::Geometry2D, fs::FaceSet)
+    fs.axis == 1 || error("UpwindStencil: only axial faces (axis 1), got axis $(fs.axis)")
+    n = length(fs.owner)
+    upup = Vector{Int}(undef, n)
+    hu = Vector{Float64}(undef, n)
+    hd = Vector{Float64}(undef, n)
+    df = Vector{Float64}(undef, n)
+    for e in 1:n
+        i, j = cellij(g, fs.owner[e])
+        upup[e] = i > 1 ? cellindex(g, i - 1, j) : fs.owner[e] # fallback -> 1st order
+        hu[e] = i > 1 ? geom.zc[i] - geom.zc[i-1] : 1.0
+        hd[e] = geom.zc[i+1] - geom.zc[i]
+        df[e] = 0.5 * geom.dz[i]
+    end
+    return UpwindStencil(upup, hu, hd, df)
+end
+
+function UpwindStencil(g::StructGrid1D, geom::Geometry1D, fs::FaceSet)
+    fs.axis == 1 || error("UpwindStencil: only axial faces (axis 1), got axis $(fs.axis)")
+    n = length(fs.owner)
+    upup = Vector{Int}(undef, n)
+    hu = Vector{Float64}(undef, n)
+    hd = Vector{Float64}(undef, n)
+    df = Vector{Float64}(undef, n)
+    for e in 1:n
+        i = fs.owner[e]
+        upup[e] = i > 1 ? i - 1 : i
+        hu[e] = i > 1 ? geom.zc[i] - geom.zc[i-1] : 1.0
+        hd[e] = geom.zc[i+1] - geom.zc[i]
+        df[e] = 0.5 * geom.dz[i]
+    end
+    return UpwindStencil(upup, hu, hd, df)
 end
 
 struct BoundaryFaceGeometry

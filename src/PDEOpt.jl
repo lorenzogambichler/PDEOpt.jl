@@ -30,13 +30,15 @@ export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advect
 export advection_flux, diffusion_flux,
     assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
     assemble_react!, assemble_boundary!, StateAssembly,
-    face_flux, bnd_energy_kernel
+    face_flux, bnd_energy_kernel,
+    vanalbada, antidiff_eps, assemble_antidiffusion!
 
 # Tensor grid connectivity, geometry, DOF map, sparsitiy pattern
 export AbstractGrid, AbstractGeometry,
     StructGrid2D, StructGrid1D, ncells, cellindex, cellij,
     FaceSet, interior_faces, BoundaryFaceSet, boundary_faces,
     Geometry1D, Geometry2D, cellvolume, cellcentroid, FaceGeometry, BoundaryFaceGeometry,
+    UpwindStencil,
     DofMap, ndof, fieldindex, dof, celldof, fielddof, sparsity_pattern
 
 # Physics models

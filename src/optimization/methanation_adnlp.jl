@@ -17,7 +17,35 @@ struct ZeroHessian <: ADNLPModels.ADBackend end
 ZeroHessian(args...; kwargs...) = ZeroHessian()
 ADNLPModels.get_nln_nnzh(::ZeroHessian, nvar) = 0
 
-struct MethanationOCP{TSA,TTab}
+# 2nd-order axial advection (nothing = 1st order)
+struct AntiDiffusion
+    st::UpwindStencil
+    fs::FaceSet # axial
+    fg::FaceGeometry # axial
+    εf::Vector{Float64} # ε limiter (per-field))
+end
+
+# Axial (fs, fg) from sa.dirs
+function _axial_dir(sa)
+    i = findfirst(d -> first(d).axis == 1, sa.dirs)
+    isnothing(i) && error("no axial (axis 1) face set in StateAssembly.dirs")
+    return sa.dirs[i]
+end
+
+# yref per field matches _scales: ctot·M[α] for species (the density at x_α = 1, so trace
+# inlet species still get a sane scale), ΔT for temperature.
+function AntiDiffusion(sa, y0::Vector{Float64}; ΔT::Float64=450.0, rel::Float64=1e-3)
+    prob = sa.prob
+    dm, m, grid, geom = prob.dm, prob.model, prob.grid, prob.geom
+    nsp = nspecies(m)
+    ctot = sum(y0[dof(dm, 1, α)] / m.M[α] for α in 1:nsp)
+    yref = [fi <= nsp ? ctot * m.M[fi] : ΔT for fi in 1:length(dm.fields)]
+    fs, fg = _axial_dir(sa)
+    st = UpwindStencil(grid, geom, fs)
+    return AntiDiffusion(st, fs, fg, antidiff_eps(yref, minimum(geom.dz); rel=rel))
+end
+
+struct MethanationOCP{TSA,TTab,TAD}
     # Collocation
     sa::TSA
     tab::TTab # tableau
@@ -48,7 +76,11 @@ struct MethanationOCP{TSA,TTab}
     mdiag::Vector{Int} # nzval indexes M[d,d]
     wall_dofs::Vector{Int} # f_wall dofs
     caches::Dict{DataType,Any}
+    # Discretization
+    ad::TAD # AntiDiffusion (nothing for 1st order)
 end
+
+recon(ocp::MethanationOCP) = isnothing(ocp.ad) ? :upwind1 : :vanalbada
 
 # diagonal nzval positions CSC matrix
 function _diagindex(A::SparseMatrixCSC)
@@ -115,10 +147,16 @@ end
 
 function MethanationOCP(sa, tab, Δt::Float64, Ne::Int, y0::Vector{Float64};
     Tw_min, Tw_max, Tmax, Tmin=min(Tw_min, minimum(@view y0[fielddof(sa.prob.dm, :T)])) - 50.0,
-    x_floor=1e-8, x_floor_H2=1e-3, γ=0.0, co2_in=nothing)
+    x_floor=1e-8, x_floor_H2=1e-3, γ=0.0, co2_in=nothing,
+    recon::Symbol=:vanalbada, ad_rel::Float64=1e-3)
 
     dm, m = sa.prob.dm, sa.prob.model
     sy, y_off, sc = _scales(sa, y0, Float64(Tmin), Float64(Tmax))
+
+    recon in (:upwind1, :vanalbada) ||
+        error("recon must be :upwind1 or :vanalbada, got :$recon")
+    ad = recon === :upwind1 ? nothing :
+         AntiDiffusion(sa, y0; ΔT=Float64(Tmax) - Float64(Tmin), rel=ad_rel)
 
     bfs_out, bfg_out = sa.ebnd[2]
     co2_dofs = [dof(dm, c, :CO2) for c in bfs_out.cells]
@@ -133,7 +171,7 @@ function MethanationOCP(sa, tab, Δt::Float64, Ne::Int, y0::Vector{Float64};
     return MethanationOCP(sa, tab, Δt, Ne, nstages(tab), ndof(dm), copy(y0),
         Tw_min, Tw_max, Tmax, Tmin, x_floor, x_floor_H2,
         sy, y_off, sc, Tw_max - Tw_min, Tw_min,
-        γ, co2_dofs, co2_w, Fin, mdiag, wall_dofs, Dict{DataType,Any}())
+        γ, co2_dofs, co2_w, Fin, mdiag, wall_dofs, Dict{DataType,Any}(), ad)
 end
 
 function _tcache(ocp::MethanationOCP, ::Type{T}) where {T}
@@ -207,6 +245,11 @@ function _residual!(cx, z, ocp::MethanationOCP, prob, saT, buf)
 
             saT(yp) # M(Y_k^i), K(Y_k^i), f_in
             assemble_react!(prob, yp, Val(false)) # r(Y_k^i)
+            # 2nd-order axial correction rides in as a source (K left 1st order).
+            # saT(yp) just refreshed props, so they are consistent with yp.
+            ad = ocp.ad
+            isnothing(ad) ||
+                assemble_antidiffusion!(prob, saT.props, ad.st, ad.fs, ad.fg, yp, ad.εf)
 
             ti = stage_time(tab, k, i, Δt)
             fill!(b, zero(eltype(b)))
@@ -425,7 +468,9 @@ end
 
 # jac sparsity pattern
 function jac_pattern(ocp::MethanationOCP, z0::Vector{Float64}; cache::String="")
-    key = (nvars(ocp), ncons(ocp), ocp.n, ocp.s, ocp.Ne)
+    # recon must be in the key: the stencil width depends on it, and dims alone
+    # would silently reload a 1st-order pattern for a 2nd-order residual
+    key = (nvars(ocp), ncons(ocp), ocp.n, ocp.s, ocp.Ne, recon(ocp))
     if !isempty(cache) && isfile(cache)
         stored = deserialize(cache)
         stored.key == key && return J=stored.J
@@ -477,6 +522,12 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64};
     exact_hessian || return ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
         gradient_backend=gb, hessian_backend=ZeroHessian)
 
+    # methanation_hessian.jl builds from 2-cell FaceHess kernels, i.e. the 1st-order
+    # stencil. Pairing it with a 2nd-order residual would give a silently wrong Hessian.
+    isnothing(ocp.ad) ||
+        error("exact_hessian=true is only valid with recon=:upwind1; the kernel Hessian " *
+              "still uses the 2-cell FaceHess stencil. Use exact_hessian=false.")
+
     # Jacobian from ADNLPModels (precomputed pattern -> no tracer)
     # Hessian from local kernel assembly in methanation_hessian.jl
     patJ = jac_pattern(ocp, z0; cache=sparsity_cache)
@@ -505,6 +556,8 @@ end
 function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97",
     exact_hessian::Bool=false, sparsity_cache::String="", show_time::Bool=false, kwargs...)
     nlp = build_ocp(ocp, x0; exact_hessian, sparsity_cache, show_time)
+    show_time && println("  • recon = :$(recon(ocp)), jac nnz = $(nlp.meta.nnzj) ",
+        "($(round(nlp.meta.nnzj / ncons(ocp); digits=1)) per row).")
     hess_opts = exact_hessian ? (;) : (hessian_approximation="limited-memory",)
     stats = ipopt(nlp; hess_opts..., mu_strategy="adaptive",
         acceptable_tol=1e-4, acceptable_iter=3,

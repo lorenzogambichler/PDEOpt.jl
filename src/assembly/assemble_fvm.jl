@@ -9,7 +9,8 @@ import ..assemble_mass!
 export advection_flux, diffusion_flux,
     assemble_mass!, assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
     assemble_react!, assemble_boundary!, StateAssembly,
-    face_flux, bnd_energy_kernel
+    face_flux, bnd_energy_kernel,
+    vanalbada, antidiff_eps, assemble_antidiffusion!
 
 function advection_flux(βn::Real, area::Real)
     F = βn * area
@@ -254,7 +255,42 @@ function assemble_react!(prob::ProblemCache, y::AbstractVector,
     return prob
 end
 
-# Boundary forcing vector 
+# Van Albada limiter, averaged-slope form
+# ψ(a,b) = ab(a+b)/(a² + b² + ε)
+@inline vanalbada(a, b, ε) = a * b * (a + b) / (a * a + b * b + ε)
+
+# ε for vanalbada (dependent)
+antidiff_eps(yref::AbstractVector, href::Real; rel::Real=1e-3) =
+    [(rel * yr / href)^2 for yr in yref]
+
+# 2nd-order axial advection correction (face value y_f = y_o  -> y_f = y_o + ψ(a,b)·df)
+# Flux F = βf·Δy·A -> add to r(y), r[owner] -= F, r[neighbor] += F
+# Jr is kept as is -> inexact newton
+function assemble_antidiffusion!(prob::ProblemCache, props, st::UpwindStencil,
+    fs::FaceSet, fg::FaceGeometry, y::AbstractVector, εf::AbstractVector)
+    dm, model = prob.dm, prob.model
+    for fi in eachindex(dm.fields)
+        transported(model, fi) || continue
+        ε = εf[fi]
+        for e in eachindex(fs.owner)
+            o, n, uu = fs.owner[e], fs.neighbor[e], st.upup[e]
+            go, gn, guu = dof(dm, o, fi), dof(dm, n, fi), dof(dm, uu, fi)
+
+            # uu = o on first axial face
+            a = (y[go] - y[guu]) / st.hu[e]
+            b = (y[gn] - y[go]) / st.hd[e]
+            Δy = vanalbada(a, b, ε) * st.df[e]
+
+            βf = face_velocity(model, props, fi, fs.axis, o, n, fg.wf[e])
+            F = βf * Δy * fg.area[e]
+            prob.r[go] -= F
+            prob.r[gn] += F
+        end
+    end
+    return prob
+end
+
+# Boundary forcing vector
 # b(t) = f_in·y_in(t) + f_wall⋅T_wall(t)
 function assemble_boundary!(prob::ProblemCache, b::AbstractVector, t::Real)
     for field in prob.dm.fields

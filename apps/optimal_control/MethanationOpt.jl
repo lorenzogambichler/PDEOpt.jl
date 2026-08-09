@@ -114,15 +114,25 @@ function resample(Y::AbstractMatrix, Δt::Float64, ts::AbstractVector)
 end
 
 # CN forward solve for given Tw(t)
-function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothing)
-    prob, sa, _ = setup_problem(; Tw=Twfun)
+function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothing,
+    recon::Symbol=:vanalbada)
+    prob, sa, y0 = setup_problem(; Tw=Twfun)
     N = round(Int, tf / Δt_cn) + 1
     cache = CNCache(prob, Δt_cn, N)
     for field in prob.dm.fields
         set_ic!(cache, field, inlet_mod(prob.model, field, 0.0))
     end
-    cn_solve!(cache,
-        (y, WithJac) -> assemble_react!(prob, y, WithJac),
+
+    # Deferred correction for 2nd order (inexat newton)
+    ad = recon === :upwind1 ? nothing : AntiDiffusion(sa, y0)
+    react! = function (y, WithJac)
+        assemble_react!(prob, y, WithJac)
+        isnothing(ad) ||
+            assemble_antidiffusion!(prob, sa.props, ad.st, ad.fs, ad.fg, y, ad.εf)
+        return prob
+    end
+
+    cn_solve!(cache, react!,
         (b, t) -> assemble_boundary!(prob, b, t),
         shamanskii(refactor_every=20);
         reassemble! = y -> (hook(y, prob); sa(y)))
@@ -133,7 +143,7 @@ end
 # 1) feedback law generates continuous Tw(t), extract piecewise constant u
 # 2) re-simulate with piecewise constant u
 function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
-    Tset=680.0, Kp=10.0, τ=10.0)
+    Tset=680.0, Kp=10.0, τ=10.0, recon::Symbol=:vanalbada)
     peak = Ref(0.0)
     Tw = Ref(Tw_max)
     tprev = Ref(-1.0)
@@ -150,7 +160,7 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
     end
 
     # 1) Continuous Tw(t)
-    cn_forward(Twctl, tf, Δt_cn;
+    cn_forward(Twctl, tf, Δt_cn; recon=recon,
         hook=(y, prob) -> (peak[] = maximum(@view y[fielddof(prob.dm, :T)])))
 
     u = fill(Tw_max, Ne)
@@ -162,10 +172,10 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
 
     # 2) Re-simulate
     uf(t) = u[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
-    return resample(cn_forward(uf, tf, Δt_cn).y, Δt_cn, ts), u
+    return resample(cn_forward(uf, tf, Δt_cn; recon=recon).y, Δt_cn, ts), u
 end
 
-function main()
+function main(; recon::Symbol=:vanalbada)
     # Params
     tf = 750.0
     Ne = 30 # finite elements
@@ -181,14 +191,22 @@ function main()
     # OCP
     co2_in = co2_inflow(sa) # inlet flowrate CO2
     ocp = MethanationOCP(sa, RadauIIA(s), Δt, Ne, y0; Tw_min=Tw_min, Tw_max=Tw_max,
-        Tmax=Tmax, γ=γ, co2_in=co2_in)
+        Tmax=Tmax, γ=γ, co2_in=co2_in, recon=recon)
 
     # Initial guesses
     Zguess, uguess = forward_guess(tf, timegrid(ocp), Δt, Ne;
-        Tw_min=Tw_min, Tw_max=Tw_max)
+        Tw_min=Tw_min, Tw_max=Tw_max, recon=recon)
     x0 = vcat(vec(Zguess), uguess)
-    Tg = maximum(Zguess[fielddof(prob.dm, :T), :])
-    println("init guess: max T = ", round(Tg; digits=1), " K")
+
+    # Check ϵ
+    Td = fielddof(prob.dm, :T)
+    Tg, idx = findmax(view(Zguess, Td, :))
+    zhot = prob.geom.zc[cellij(prob.grid, idx[1])[1]]
+    spmin = minimum(view(Zguess, setdiff(1:ndof(prob.dm), Td), :))
+    println("recon = :", recon)
+    println("init guess: T_max = ", round(Tg; digits=1), " K, z_max = ",
+        round(zhot; digits=3), " m, ρ_min = ", round(spmin; sigdigits=3))
+    spmin < 0 && @warn "negative species density in CN guess -> limiter ε too large" spmin
 
     # Solve
     res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-5, exact_hessian=false, show_time=true, 
