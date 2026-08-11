@@ -1,0 +1,19 @@
+.git
+.gitignore
+docker
+docs
+README.md
+TODO.md
+
+# Solver output
+tests/results/
+apps/forward_solvers/results/
+apps/optimal_control/results/
+*.vtu
+*.pvd
+*.vtr
+*.pvsm
+
+# Licensed binaries
+vendor/
+HSL_jll*/
