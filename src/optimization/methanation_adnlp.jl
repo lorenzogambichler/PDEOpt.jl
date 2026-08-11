@@ -468,8 +468,7 @@ end
 
 # jac sparsity pattern
 function jac_pattern(ocp::MethanationOCP, z0::Vector{Float64}; cache::String="")
-    # recon must be in the key: the stencil width depends on it, and dims alone
-    # would silently reload a 1st-order pattern for a 2nd-order residual
+    # recon must be in the key
     key = (nvars(ocp), ncons(ocp), ocp.n, ocp.s, ocp.Ne, recon(ocp))
     if !isempty(cache) && isfile(cache)
         stored = deserialize(cache)
@@ -522,8 +521,7 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64};
     exact_hessian || return ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
         gradient_backend=gb, hessian_backend=ZeroHessian)
 
-    # methanation_hessian.jl builds from 2-cell FaceHess kernels, i.e. the 1st-order
-    # stencil. Pairing it with a 2nd-order residual would give a silently wrong Hessian.
+    # methanation_hessian.jl only works with 1st order upwind
     isnothing(ocp.ad) ||
         error("exact_hessian=true is only valid with recon=:upwind1; the kernel Hessian " *
               "still uses the 2-cell FaceHess stencil. Use exact_hessian=false.")
@@ -549,8 +547,13 @@ function hsl_options(linear_solver::String)
         return (;)
     end
     opts = (hsllib=HSL_jll.libhsl_path, linear_solver=linear_solver)
-    return linear_solver == "ma97" ?
-           merge(opts, (ma97_order="metis", ma97_scaling="none", ma97_nemin=8)) : opts # keep nemin low when ram is limiting factor
+    if linear_solver == "ma97" 
+        return merge(opts, (ma97_order="metis", ma97_scaling="none", ma97_nemin=8)) # keep nemin low when ram is limiting factor
+    elseif linear_solver == "ma57"
+        return merge(opts, (ma57_order="metis", ma57_scaling="none", ma57_nemin=8))
+    else
+        return opts
+    end
 end
 
 function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97",

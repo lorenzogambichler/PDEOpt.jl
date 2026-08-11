@@ -100,19 +100,6 @@ function setup_problem(; nz=25, nr=3, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     return prob, sa, y0
 end
 
-# Linear interpolation of Y (Δt grid -> ts nodes)
-function resample(Y::AbstractMatrix, Δt::Float64, ts::AbstractVector)
-    n, N = size(Y)
-    Z = Matrix{Float64}(undef, n, length(ts))
-    for (m, t) in enumerate(ts)
-        x = clamp(t / Δt, 0.0, float(N - 1))
-        k = min(floor(Int, x), N - 2)
-        θ = x - k
-        @views @. Z[:, m] = (1 - θ) * Y[:, k+1] + θ * Y[:, k+2]
-    end
-    return Z
-end
-
 # CN forward solve for given Tw(t)
 function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothing,
     recon::Symbol=:vanalbada)
@@ -139,35 +126,25 @@ function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothi
     return cache
 end
 
-# TODO Fix init guess
-function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.5, Tw_min=300.0, Tw_max=650.0,
-    gmax = 50, ω=0.7, δ=5.0, recon::Symbol=:vanalbada)
-    u = fill(Tw_max, Ne)
-    Ttgt = Tmax - δ
-    for it in 1:itmax
-        peak = fill(-Inf, Ne)
-        cache = cn_forward(t -> u[clamp(floor(Int, t/Δt)+1, 1, Ne)], tf, Δt_cn; recon,
-            hook = (y, prob) -> begin
-                k = clamp(floor(Int, tnow/Δt)+1, 1, Ne)
-                peak[k] = max(peak[k], maximum(@view y[fielddof(prob.dm, :T)]))
-            end)
-        diff = maximum(peak) - Ttgt
-        diff <= 0 && return resample(cache.y, Δt_cn, ts), u
-        for k in 1:Ne
-            if it == 1
-                g = 10.0
-            else 
-                g = 0.0 # TODO
-                clamp(g, 1.0, gmax)
-            end
-            peak[k] > Ttgt && (u[k] = max(Tw_min, u[k] - ω*g*(peak[k] - Ttgt)))
-        end
+# Initial guess
+function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, Tw_max=650.0,
+    δ=10.0, recon::Symbol=:vanalbada)
+
+    function forward(u)
+        uf(t) = u[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
+        cache = cn_forward(uf, tf, Δt_cn; recon=recon)
+        Z = resample(cache.y, Δt_cn, ts)
+        return Z, maximum(view(Z, fielddof(cache.prob.dm, :T), :))
     end
+
+    g = bisect_shape(forward, Ne; Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, δ=δ)
+    g.conv || @warn "initial guess bisection did not converge" g.Tpk g.Tw
+    return g.Z, g.u
 end
 
 function main(; recon::Symbol=:vanalbada)
     # Params
-    tf = 700.0
+    tf = 750.0
     Ne = 30 # finite elements
     s = 3 # radau IIA stages
     Δt = tf / Ne # ideally 25s
@@ -184,7 +161,7 @@ function main(; recon::Symbol=:vanalbada)
 
     # Initial guesses
     Zguess, uguess = forward_guess(tf, timegrid(ocp), Δt, Ne;
-        Tset=600.0, Tw_min=Tw_min, Tw_max=Tw_max, recon=recon)
+        Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, recon=recon)
     x0 = vcat(vec(Zguess), uguess)
 
     # Check ϵ

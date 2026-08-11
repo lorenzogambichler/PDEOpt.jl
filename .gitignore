@@ -5,4 +5,8 @@ apps/optimal_control/results/
 *.pvd
 *.vtr
 
-TODO.md
+# Licensed HSL binaries — not redistributable. They stay outside the repo and
+# are pulled in via the `hsl` build context (see docker/Dockerfile); these
+# entries are a safety net in case a copy ever lands here.
+vendor/
+HSL_jll*/

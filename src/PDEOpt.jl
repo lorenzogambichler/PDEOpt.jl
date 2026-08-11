@@ -10,6 +10,7 @@ include("assembly/assemble_fvm.jl")
 include("solvers/nonlinear.jl")
 include("timestepping/crank_nicolson.jl")
 include("timestepping/collocation.jl")
+include("optimization/initial_guess.jl")
 
 using .StructuredMesh
 using .Properties
@@ -20,6 +21,7 @@ using .AssembleFVM
 using .NonlinearSolvers
 using .CrankNicolson
 using .Collocation
+using .InitialGuess
 
 # FEM assembly
 export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advection!,
@@ -60,5 +62,8 @@ export cn_solve!, CNCache, set_ic!
 
 # Collocation tableaux
 export RadauIIA, nstages, stage_time, quadrature_weights
+
+# Optimization
+export bisect_shape, twshape, resample
 
 end
