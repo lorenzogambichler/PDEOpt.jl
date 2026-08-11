@@ -64,6 +64,6 @@ export cn_solve!, CNCache, set_ic!
 export RadauIIA, nstages, stage_time, quadrature_weights
 
 # Optimization
-export bisect_shape, twshape, resample
+export bisect_shape, bisect_const, twshape, resample
 
 end

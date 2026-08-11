@@ -2,7 +2,7 @@ module InitialGuess
 
 using Printf
 
-export bisect_shape, twshape, resample
+export bisect_shape, bisect_const, twshape, resample
 
 # Linear interpolation of Y (uniform Δt grid -> ts nodes)
 function resample(Y::AbstractMatrix, Δt::Float64, ts::AbstractVector)
@@ -31,9 +31,8 @@ end
 
 # Bisection to find largest λ s.t. max(Tguess) < Tmax - δ (for fixed shape)
 function bisect_shape(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
-    δ=2.0, itmax=16, tol=0.05, a=0.15, b=0.35, c=0.75, d=0.90, verbose::Bool=true)
-
-    Ttgt = Tmax - δ
+    δ=7.0, itmax=20, tol=0.05, a=0.15, b=0.35, c=0.75, d=0.90, verbose::Bool=true)
+    Ttgt = Tmax - δ # δ absorbs error (CN, interpolation, etc.)
     sh = [twshape((k - 0.5) / Ne; a=a, b=b, c=c, d=d) for k in 1:Ne]
 
     function run(λ)
@@ -66,6 +65,37 @@ function bisect_shape(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
     end
     Z, u, λ, Tpk = best
     return (Z=Z, u=u, Tpk=Tpk, Tw=λ, it=it, conv=true)
+end
+
+# Bisection to find largest constant Tw s.t. max(Tguess) < Tmax - δ
+# lo always feasible by construction
+function bisect_const(forward, Ne::Int; Tmax, Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
+    δ=7.0, itmax=20, tol=0.05, verbose::Bool=true)
+    Ttgt = Tmax - δ # δ absorbs error (CN, interpolation, etc.) 
+
+    Zh, Th = forward(Tw_max)
+    if Th <= Ttgt
+        verbose && @printf("  Tw_max already feasible (max T %.2f K)\n", Th)
+        return (Z=Zh, u=fill(Tw_max, Ne), Tpk=Th, Tw=Tw_max, it=1, conv=true)
+    end
+    Zl, Tl = forward(Tw_min)
+    if Tl > Ttgt
+        @warn "even Tw_min breaches the cap -- infeasible for this reactor" Tl Ttgt
+        return (Z=Zl, u=fill(Tw_min, Ne), Tpk=Tl, Tw=Tw_min, it=2, conv=false)
+    end
+
+    lo, hi, it = Tw_min, Tw_max, 2
+    best = (Zl, Tw_min, Tl)
+    while hi - lo > tol && it < itmax
+        mid = 0.5 * (lo + hi)
+        Zm, Tm = forward(mid)
+        it += 1
+        verbose && @printf("  it %2d | Tw %8.3f | max T %8.3f K  %s\n",
+            it, mid, Tm, Tm <= Ttgt ? "feasible" : "over")
+        Tm <= Ttgt ? (lo = mid; best = (Zm, mid, Tm)) : (hi = mid)
+    end
+    Z, Tw, Tpk = best
+    return (Z=Z, u=fill(Tw, Ne), Tpk=Tpk, Tw=Tw, it=it, conv=true)
 end
 
 end

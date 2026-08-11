@@ -137,7 +137,8 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, T
         return Z, maximum(view(Z, fielddof(cache.prob.dm, :T), :))
     end
 
-    g = bisect_shape(forward, Ne; Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, δ=δ)
+    #g = bisect_shape(forward, Ne; Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, δ=δ)
+    g = bisect_const(forward, Ne; Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, δ=δ)
     g.conv || @warn "initial guess bisection did not converge" g.Tpk g.Tw
     return g.Z, g.u
 end
@@ -148,6 +149,7 @@ function main(; recon::Symbol=:vanalbada)
     Ne = 30 # finite elements
     s = 3 # radau IIA stages
     Δt = tf / Ne # ideally 25s
+    Δtcn_resim = 0.1
     Tw_min, Tw_max, Tmax = 300.0, 650.0, 750.0
     γ = 0.01
 
@@ -176,7 +178,10 @@ function main(; recon::Symbol=:vanalbada)
 
     # Solve
     res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-5, exact_hessian=false, show_time=true, 
-        limited_memory_max_history=75)
+        limited_memory_max_history=75, mu_strategy="adaptive")
+
+    # Res-sim with CN
+    # TODO
 
     # Print res
     Xguess = co2_conv(ocp, Zguess)
@@ -190,9 +195,9 @@ function main(; recon::Symbol=:vanalbada)
     println("Tw: ", round.(res.u; digits=1))
 
     # Save res
-    resultsdir = joinpath(@__DIR__, "results/Methanation/")
-    write_state(joinpath(resultsdir, "opt_state"), prob, res.Z, Δt, Ne+1)
-    write_state(joinpath(resultsdir, "guess_state"), prob, Zguess, Δt, Ne+1)
-    write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
-    write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
+    #resultsdir = joinpath(@__DIR__, "results/Methanation/")
+    #write_state(joinpath(resultsdir, "opt_state"), prob, res.Z, Δt, Ne+1)
+    #write_state(joinpath(resultsdir, "guess_state"), prob, Zguess, Δt, Ne+1)
+    #write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
+    #write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
 end

@@ -17,7 +17,7 @@ end
 
 # Bisection to find largest λ s.t. max(Tguess) < Tmax - δ (for fixed shape)
 function bisect_shape(tf, ts, Δt, Ne; Tmax, Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
-    δ=2.0, itmax=16, tol=0.05, a=0.15, b=0.35, c=0.75, d=0.90,
+    δ=2.0, itmax=16, tol=0.05, a=0.15, b=0.35, c=1.0, d=1.0,
     recon::Symbol=:vanalbada, verbose::Bool=true)
 
     Ttgt = Tmax - δ
