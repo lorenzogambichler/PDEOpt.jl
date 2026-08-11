@@ -131,7 +131,8 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, T
     δ=10.0, recon::Symbol=:vanalbada)
 
     function forward(u)
-        uf(t) = u[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
+        uvec = u isa Real ? fill(float(u), Ne) : u # vector (bisect_shape), scalar (bisect_const)
+        uf(t) = uvec[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
         cache = cn_forward(uf, tf, Δt_cn; recon=recon)
         Z = resample(cache.y, Δt_cn, ts)
         return Z, maximum(view(Z, fielddof(cache.prob.dm, :T), :))

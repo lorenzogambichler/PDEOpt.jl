@@ -69,7 +69,7 @@ end
 
 # Bisection to find largest constant Tw s.t. max(Tguess) < Tmax - δ
 # lo always feasible by construction
-function bisect_const(forward, Ne::Int; Tmax, Δt_cn=0.25, Tw_min=300.0, Tw_max=650.0,
+function bisect_const(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
     δ=7.0, itmax=20, tol=0.05, verbose::Bool=true)
     Ttgt = Tmax - δ # δ absorbs error (CN, interpolation, etc.) 
 
