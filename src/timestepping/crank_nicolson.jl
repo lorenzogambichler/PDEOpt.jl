@@ -3,8 +3,9 @@ module CrankNicolson
 using LinearAlgebra
 using SparseArrays
 using PDEOpt
+import ..dense_output
 
-export cn_solve!, CNCache, set_ic!
+export cn_solve!, CNCache, set_ic!, resample
 
 mutable struct CNStats
     nf::Int # function (residual) evals
@@ -108,5 +109,20 @@ function set_ic!(cache::CNCache, field, y0)
     prob = cache.prob
     @views cache.y[fielddof(prob.dm, field), 1] .= y0
 end
+
+# CN dense output
+function resample(Y::AbstractMatrix, Δt::Float64, ts::AbstractVector)
+    n, N = size(Y)
+    Z = Matrix{Float64}(undef, n, length(ts))
+    for (m, t) in enumerate(ts)
+        x = clamp(t / Δt, 0.0, float(N - 1))
+        k = min(floor(Int, x), N - 2)
+        θ = x - k
+        @views @. Z[:, m] = (1 - θ) * Y[:, k+1] + θ * Y[:, k+2]
+    end
+    return Z
+end
+
+dense_output(cache::CNCache, ts::AbstractVector) = resample(cache.y, cache.Δt, ts)
 
 end

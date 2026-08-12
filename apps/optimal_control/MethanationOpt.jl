@@ -1,41 +1,11 @@
 ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "4")
 using LinearAlgebra
 using SparseArrays
-using WriteVTK
 using PDEOpt
 
 includet("../../src/optimization/methanation_adnlp.jl")
 
 const SPECIES = (:CH4, :CO, :CO2, :H2O, :H2, :N2)
-
-function write_state(path::String, prob::ProblemCache, y::AbstractMatrix, Δt::Float64, N::Int)
-    grid = prob.grid
-    nz, nr = grid.nz, grid.nr
-    mkpath(dirname(path))
-    paraview_collection(path) do pvd
-        for n = 1:N
-            t = (n - 1) * Δt
-            vtk_grid("$(path)_$(n)", grid.z, grid.r) do vtk
-                for field in prob.dm.fields
-                    fd = fielddof(prob.dm, field)
-                    # cell-index order
-                    vtk[string(field), VTKCellData()] = permutedims(reshape(y[fd, n], nr, nz))
-                end
-                pvd[t] = vtk
-            end
-        end
-    end
-end
-
-function write_control(path::String, u::AbstractVector, Δt::Float64, N::Int)
-    mkpath(dirname(path))
-    open(path, "w") do io
-        println(io, "t,Tw")
-        for n = 1:N
-            println(io, (n - 1) * Δt, ",", u[n])
-        end
-    end
-end
 
 function setup_problem(; nz=25, nr=3, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     grid = StructGrid2D(L, R, nz, nr)
@@ -100,6 +70,10 @@ function setup_problem(; nz=25, nr=3, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     return prob, sa, y0
 end
 
+# Piecewise-constant control
+zoh(u::AbstractVector, Δt::Float64) =
+    t -> u[clamp(floor(Int, t / Δt) + 1, 1, length(u))]
+
 # CN forward solve for given Tw(t)
 function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothing,
     recon::Symbol=:vanalbada)
@@ -132,8 +106,7 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, T
 
     function forward(u)
         uvec = u isa Real ? fill(float(u), Ne) : u # vector (bisect_shape), scalar (bisect_const)
-        uf(t) = uvec[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
-        cache = cn_forward(uf, tf, Δt_cn; recon=recon)
+        cache = cn_forward(zoh(uvec, Δt), tf, Δt_cn; recon=recon)
         Z = resample(cache.y, Δt_cn, ts)
         return Z, maximum(view(Z, fielddof(cache.prob.dm, :T), :))
     end
@@ -149,8 +122,9 @@ function main(; recon::Symbol=:vanalbada)
     tf = 750.0
     Ne = 30 # finite elements
     s = 3 # radau IIA stages
-    Δt = tf / Ne # ideally 25s
-    Δtcn_resim = 0.1
+    Δt = tf / Ne
+    Δt_resim = 0.05
+    Δt_plot = 2.5 # for VTK
     Tw_min, Tw_max, Tmax = 300.0, 650.0, 750.0
     γ = 0.01
 
@@ -179,10 +153,7 @@ function main(; recon::Symbol=:vanalbada)
 
     # Solve
     res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-5, exact_hessian=false, show_time=true, 
-        limited_memory_max_history=75, mu_strategy="adaptive")
-
-    # Res-sim with CN
-    # TODO
+        limited_memory_max_history=75)
 
     # Print res
     Xguess = co2_conv(ocp, Zguess)
@@ -195,10 +166,23 @@ function main(; recon::Symbol=:vanalbada)
         ", opt -> ", round(mean_co2_conv(ocp, res.Z); digits=4))
     println("Tw: ", round.(res.u; digits=1))
 
+    # Re-sim with CN, validate constraints on fine grid
+    res_cn = cn_forward(zoh(res.u, Δt), tf, Δt_resim; recon=recon)
+    guess_cn = cn_forward(zoh(uguess, Δt), tf, Δt_resim; recon=recon)
+
+    # Compare
+    Tpk_cn = maximum(view(res_cn.y, Td, :))
+    Xbar_cn = mean_co2_conv(ocp, resample(res_cn.y, Δt_resim, timegrid(ocp)))
+    println("T_max: (Δt_cn = ", Δt_resim, ") -> ", round(Tpk_cn; digits=2),
+        " K, NLP -> ", round(maximum(view(res.Z, Td, :)); digits=2), " K (constraint: ", Tmax, " K)")
+    println("mean X_CO2: (Δt_cn = ", Δt_resim, ") -> ", round(Xbar_cn; digits=4),
+        ", NLP -> ", round(mean_co2_conv(ocp, res.Z); digits=4))
+
     # Save res
-    #resultsdir = joinpath(@__DIR__, "results/Methanation/")
-    #write_state(joinpath(resultsdir, "opt_state"), prob, res.Z, Δt, Ne+1)
-    #write_state(joinpath(resultsdir, "guess_state"), prob, Zguess, Δt, Ne+1)
-    #write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
-    #write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
+    ts_plot = collect(0.0:Δt_plot:tf)
+    resultsdir = joinpath(@__DIR__, "results/Methanation/")
+    write_vtk(joinpath(resultsdir, "opt_state"), prob, dense_output(res_cn, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "guess_state"), prob, dense_output(guess_cn, ts_plot), ts_plot)
+    write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
+    write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
 end

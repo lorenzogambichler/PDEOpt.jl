@@ -8,9 +8,11 @@ function assemble_mass! end
 include("assembly/assemble_dg.jl")
 include("assembly/assemble_fvm.jl")
 include("solvers/nonlinear.jl")
+function dense_output end
 include("timestepping/crank_nicolson.jl")
 include("timestepping/collocation.jl")
 include("optimization/initial_guess.jl")
+include("io/output.jl")
 
 using .StructuredMesh
 using .Properties
@@ -22,6 +24,7 @@ using .NonlinearSolvers
 using .CrankNicolson
 using .Collocation
 using .InitialGuess
+using .Output
 
 # FEM assembly
 export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advection!,
@@ -58,12 +61,18 @@ export ProblemCache
 export newton!, chord!, shamanskii
 
 # ODE solvers
-export cn_solve!, CNCache, set_ic!
+export cn_solve!, CNCache, set_ic!, resample
 
 # Collocation tableaux
 export RadauIIA, nstages, stage_time, quadrature_weights
 
+# Dense output
+export dense_output
+
+# Output
+export write_vtk, write_control
+
 # Optimization
-export bisect_shape, bisect_const, twshape, resample
+export bisect_shape, bisect_const, twshape
 
 end

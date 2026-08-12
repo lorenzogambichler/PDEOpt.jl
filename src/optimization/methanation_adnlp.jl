@@ -548,7 +548,7 @@ function hsl_options(linear_solver::String)
     end
     opts = (hsllib=HSL_jll.libhsl_path, linear_solver=linear_solver)
     if linear_solver == "ma97" 
-        return merge(opts, (ma97_order="metis", ma97_scaling="none", ma97_nemin=8)) # keep nemin low when ram is limiting factor
+        return merge(opts, (ma97_order="metis", ma97_scaling="mc64", ma97_nemin=8)) # keep nemin low when ram is limiting factor
     elseif linear_solver == "ma57"
         return merge(opts, (ma57_order="metis", ma57_scaling="none", ma57_nemin=8))
     else

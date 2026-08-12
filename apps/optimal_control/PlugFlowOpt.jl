@@ -1,43 +1,9 @@
 ENV["OMP_NUM_THREADS"] = "4"
 using LinearAlgebra
 using SparseArrays
-using WriteVTK
 using PDEOpt
 
 includet("../../src/optimization/plugFlow_jump.jl")
-
-function write_vtk(path::String, prob::ProblemCache, y::AbstractMatrix, Δt::Float64, N::Int)
-    grid = prob.grid
-    nz, nr = grid.nz, grid.nr
-    Cdofs, Tdofs = fielddof(prob.dm, :C), fielddof(prob.dm, :T)
-    mkpath(dirname(path))
-    paraview_collection(path) do pvd
-        for n = 1:N
-            t = (n - 1) * Δt
-            Cgrid = permutedims(reshape(y[Cdofs, n], nr, nz))
-            Tgrid = permutedims(reshape(y[Tdofs, n], nr, nz))
-            vtk_grid("$(path)_$(n)", grid.z, grid.r) do vtk
-                vtk["C", VTKCellData()] = Cgrid
-                vtk["T", VTKCellData()] = Tgrid
-                pvd[t] = vtk
-            end
-        end
-    end
-end
-
-write_vtk(path::String, cache::CNCache) =
-    write_vtk(path, cache.prob, cache.y, cache.Δt, cache.N)
-
-# csv for control
-function write_control(path::String, u::AbstractVector, Δt::Float64, N::Int)
-    mkpath(dirname(path))
-    open(path, "w") do io
-        println(io, "t,Tw")
-        for n = 1:N
-            println(io, (n - 1) * Δt, ",", u[n])
-        end
-    end
-end
 
 function setup_problem()
     # StructGrid2D, Geometry

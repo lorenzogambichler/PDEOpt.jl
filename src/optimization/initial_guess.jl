@@ -2,20 +2,7 @@ module InitialGuess
 
 using Printf
 
-export bisect_shape, bisect_const, twshape, resample
-
-# Linear interpolation of Y (uniform Δt grid -> ts nodes)
-function resample(Y::AbstractMatrix, Δt::Float64, ts::AbstractVector)
-    n, N = size(Y)
-    Z = Matrix{Float64}(undef, n, length(ts))
-    for (m, t) in enumerate(ts)
-        x = clamp(t / Δt, 0.0, float(N - 1))
-        k = min(floor(Int, x), N - 2)
-        θ = x - k
-        @views @. Z[:, m] = (1 - θ) * Y[:, k+1] + θ * Y[:, k+2]
-    end
-    return Z
-end
+export bisect_shape, bisect_const, twshape
 
 # Dynamic initial guess
 # Fix shape s(τ) ∈ [0,1] and bisect λ, u(t; λ) = λ + (Tw_max - λ) * s(t/tf)
