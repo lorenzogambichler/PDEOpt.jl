@@ -75,9 +75,9 @@ zoh(u::AbstractVector, Δt::Float64) =
     t -> u[clamp(floor(Int, t / Δt) + 1, 1, length(u))]
 
 # CN forward solve for given Tw(t)
-function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothing,
+function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; nz=25, nr=3, hook=(y, prob) -> nothing,
     recon::Symbol=:vanalbada)
-    prob, sa, y0 = setup_problem(; Tw=Twfun)
+    prob, sa, y0 = setup_problem(; nz=nz, nr=nr, Tw=Twfun)
     N = round(Int, tf / Δt_cn) + 1
     cache = CNCache(prob, Δt_cn, N)
     for field in prob.dm.fields
@@ -97,7 +97,7 @@ function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; hook=(y, prob) -> nothi
         (b, t) -> assemble_boundary!(prob, b, t),
         shamanskii(refactor_every=20);
         reassemble! = y -> (hook(y, prob); sa(y)))
-    return cache
+    return cache, sa
 end
 
 # Initial guess
@@ -106,7 +106,7 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, T
 
     function forward(u)
         uvec = u isa Real ? fill(float(u), Ne) : u # vector (bisect_shape), scalar (bisect_const)
-        cache = cn_forward(zoh(uvec, Δt), tf, Δt_cn; recon=recon)
+        cache, _ = cn_forward(zoh(uvec, Δt), tf, Δt_cn; recon=recon)
         Z = resample(cache.y, Δt_cn, ts)
         return Z, maximum(view(Z, fielddof(cache.prob.dm, :T), :))
     end
@@ -123,10 +123,11 @@ function main(; recon::Symbol=:vanalbada)
     Ne = 30 # finite elements
     s = 3 # radau IIA stages
     Δt = tf / Ne
-    Δt_resim = 0.05
+    Δt_resim = 0.1
     Δt_plot = 2.5 # for VTK
     Tw_min, Tw_max, Tmax = 300.0, 650.0, 750.0
     γ = 0.01
+    nz_resim, nr_resim = 75, 5
 
     # Problem
     prob, sa, y0 = setup_problem()
@@ -156,33 +157,36 @@ function main(; recon::Symbol=:vanalbada)
         limited_memory_max_history=75)
 
     # Print res
-    Xguess = co2_conv(ocp, Zguess)
-    Xopt = co2_conv(ocp, res.Z)
+    Xguess = outlet_conv(ocp, Zguess)
+    Xopt = outlet_conv(ocp, res.Z)
     println("status: ", res.stats.status)
     println("nvars = ", nvars(ocp), ", ncons = ", ncons(ocp))
     println("X_CO2(tf):  guess -> ", round(Xguess[end]; digits=4),
         ", opt -> ", round(Xopt[end]; digits=4))
-    println("mean X_CO2: guess -> ", round(mean_co2_conv(ocp, Zguess); digits=4),
-        ", opt -> ", round(mean_co2_conv(ocp, res.Z); digits=4))
+    println("mean X_CO2: guess -> ", round(mean_conv(ocp, Zguess); digits=4),
+        ", opt -> ", round(mean_conv(ocp, res.Z); digits=4))
     println("Tw: ", round.(res.u; digits=1))
 
     # Re-sim with CN, validate constraints on fine grid
-    res_cn = cn_forward(zoh(res.u, Δt), tf, Δt_resim; recon=recon)
-    guess_cn = cn_forward(zoh(uguess, Δt), tf, Δt_resim; recon=recon)
+    res_cn, sa_cn = cn_forward(zoh(res.u, Δt), tf, Δt_resim; nz=nz_resim, nr=nr_resim, recon=recon)
+    guess_cn, _ = cn_forward(zoh(uguess, Δt), tf, Δt_resim; nz=nz_resim, nr=nr_resim, recon=recon)
 
-    # Compare
-    Tpk_cn = maximum(view(res_cn.y, Td, :))
-    Xbar_cn = mean_co2_conv(ocp, resample(res_cn.y, Δt_resim, timegrid(ocp)))
+    # Compare (re-sim on fine grid -> own dm/sa)
+    Td_cn = fielddof(res_cn.prob.dm, :T)
+    Tpk_cn = maximum(view(res_cn.y, Td_cn, :))
+    Xbar_cn = mean_conv(ocp, outlet_conv(sa_cn, resample(res_cn.y, Δt_resim, timegrid(ocp))))
+    println("grid: NLP ", prob.grid.nz, " by ", prob.grid.nr,
+        " -> re-sim ", res_cn.prob.grid.nz, " by ", res_cn.prob.grid.nr)
     println("T_max: (Δt_cn = ", Δt_resim, ") -> ", round(Tpk_cn; digits=2),
         " K, NLP -> ", round(maximum(view(res.Z, Td, :)); digits=2), " K (constraint: ", Tmax, " K)")
     println("mean X_CO2: (Δt_cn = ", Δt_resim, ") -> ", round(Xbar_cn; digits=4),
-        ", NLP -> ", round(mean_co2_conv(ocp, res.Z); digits=4))
+        ", NLP -> ", round(mean_conv(ocp, res.Z); digits=4))
 
     # Save res
     ts_plot = collect(0.0:Δt_plot:tf)
     resultsdir = joinpath(@__DIR__, "results/Methanation/")
-    write_vtk(joinpath(resultsdir, "opt_state"), prob, dense_output(res_cn, ts_plot), ts_plot)
-    write_vtk(joinpath(resultsdir, "guess_state"), prob, dense_output(guess_cn, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "opt_state"), res_cn.prob, dense_output(res_cn, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "guess_state"), guess_cn.prob, dense_output(guess_cn, ts_plot), ts_plot)
     write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
     write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
 end

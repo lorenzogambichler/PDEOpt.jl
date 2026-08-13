@@ -113,9 +113,11 @@ end
 # Tw piecewise constant on el -> left edge of each el
 control_times(ocp::MethanationOCP) = [(k - 1) * ocp.Δt for k in 1:ocp.Ne]
 
-# Σ_j vz·A_j·g(r_j)·ρ_CO2,in
-co2_inflow(sa, t::Real=0.0) =
-    sum(@view sa.prob.f_in[fielddof(sa.prob.dm, :CO2)]) * inlet_mod(sa.prob.model, :CO2, t)
+# Σ_j vz·A_j·g(r_j)·ρ_i,in
+inflow(sa, spec::Symbol, t::Real=0.0) =
+    sum(@view sa.prob.f_in[fielddof(sa.prob.dm, spec)]) * inlet_mod(sa.prob.model, spec, t)
+
+co2_inflow(sa, t::Real=0.0) = inflow(sa, :CO2, t)
 
 # Reference scales, sy/y_off (vars), sc (constr rows)
 function _scales(sa, y0::Vector{Float64}, Tmin::Float64, Tmax::Float64)
@@ -443,28 +445,32 @@ struct OCPGradient{TO} <: ADNLPModels.ADBackend
 end
 ADNLPModels.gradient!(b::OCPGradient, g, f, x) = ocp_grad!(g, b.ocp, x)
 
-# X_CO2(t) = 1 − ṅ_CO2out(t)/ṅ_CO2in (outlet)
-function co2_conv(ocp::MethanationOCP, Z::AbstractMatrix)
-    X = Vector{Float64}(undef, size(Z, 2))
-    for col in axes(Z, 2)
-        co2_out = 0.0
-        for j in eachindex(ocp.co2_dofs)
-            co2_out += ocp.co2_w[j] * Z[ocp.co2_dofs[j], col]
-        end
-        X[col] = 1 - co2_out / ocp.co2_in
-    end
-    return X
+# X_i(t) = 1 − ṅ_i,out(t)/ṅ_i,in (outlet)
+# Y on any grid as long as sa same
+function outlet_conv(sa::StateAssembly, Y::AbstractMatrix, spec::Symbol=:CO2)
+    bfs_out, bfg_out = sa.ebnd[2]
+    dofs = [dof(sa.prob.dm, c, spec) for c in bfs_out.cells]
+    w = velocity(sa.prob.model, 1) .* bfg_out.area
+    Fin = inflow(sa, spec)
+    return [1 - dot(w, view(Y, dofs, col)) / Fin for col in axes(Y, 2)]
 end
 
-# mean X_CO2 over [0,tf]
-function mean_co2_conv(ocp::MethanationOCP, Z::AbstractMatrix)
-    X = co2_conv(ocp, Z)
+outlet_conv(ocp::MethanationOCP, Z::AbstractMatrix, spec::Symbol=:CO2) =
+    outlet_conv(ocp.sa, Z, spec)
+
+# mean outlet X_i over [0,tf] (Radau quad)
+# X must be on ocp stage columns but can be resampled from any grid
+function mean_conv(ocp::MethanationOCP, X::AbstractVector)
+    length(X) == ncols(ocp) || error("X has $(length(X)) cols, expected $(ncols(ocp))")
     Xbar = 0.0
     for k in 1:ocp.Ne, i in 1:ocp.s
         Xbar += ocp.tab.b[i] * X[stagecol(ocp, k, i)]
     end
     return Xbar / ocp.Ne
 end
+
+mean_conv(ocp::MethanationOCP, Z::AbstractMatrix, spec::Symbol=:CO2) =
+    mean_conv(ocp, outlet_conv(ocp.sa, Z, spec))
 
 # jac sparsity pattern
 function jac_pattern(ocp::MethanationOCP, z0::Vector{Float64}; cache::String="")
