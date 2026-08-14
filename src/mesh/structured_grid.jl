@@ -13,6 +13,9 @@ export AbstractGrid, AbstractGeometry,
     StructGrid2D, StructGrid1D, ncells, cellindex, cellij,
     FaceSet, interior_faces, BoundaryFaceSet, boundary_faces
 
+# Node grading
+export graded_nodes
+
 # Dispatch assembly on concrete types -> extendable to 1D grids
 abstract type AbstractGrid end
 abstract type AbstractGeometry end
@@ -24,9 +27,20 @@ struct StructGrid2D <: AbstractGrid
     nr::Int # ncells radial
 end
 
-function StructGrid2D(Lz::Float64, Lr::Float64, nz::Int, nr::Int)
-    z = collect(range(0.0, Lz; length = nz + 1)) # axial node vector
-    #z = Lz .* range(0.0, 1.0; length = nz + 1).^2
+# Geometric grading (cell widths w_i ~ q^(i-1))
+# q = ratio^(1/(n-1)), w_n/w_1 = ratio (ratio = 1 for uniform)
+function graded_nodes(L::Real, n::Int, ratio::Real)
+    (n == 1 || ratio == 1) && return collect(range(0.0, L; length=n + 1))
+    q = float(ratio)^(1 / (n - 1))
+    w = [q^(i - 1) for i = 1:n]
+    w .*= L / sum(w)
+    x = pushfirst!(cumsum(w), 0.0)
+    x[end] = float(L) # kill roundoff
+    return x
+end
+
+function StructGrid2D(Lz::Float64, Lr::Float64, nz::Int, nr::Int; ratio::Real=1.0)
+    z = graded_nodes(Lz, nz, ratio) # axial node vector
     r = collect(range(0.0, Lr; length = nr + 1)) # radial node vector
     return StructGrid2D(z, r, nz, nr)
 end
@@ -36,8 +50,8 @@ struct StructGrid1D <: AbstractGrid
     nz::Int
 end
 
-function StructGrid1D(Lz::Float64, nz::Int)
-    z = collect(range(0.0, Lz; length = nz + 1))
+function StructGrid1D(Lz::Float64, nz::Int; ratio::Real=1.0)
+    z = graded_nodes(Lz, nz, ratio)
     return StructGrid1D(z, nz)
 end
 
