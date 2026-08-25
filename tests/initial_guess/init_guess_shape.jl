@@ -87,8 +87,8 @@ function check_guess(; recon::Symbol=:vanalbada, tf=700.0, Ne=30, s=3,
     c0c = zeros(ncons(ocp))
     ocp_cons!(ocp, c0c, scale_z(ocp, vcat(vec(Zc), g.u)))
 
-    Xt = co2_conv(ocp, Z)
-    Xend, Xmean = Xt[end], mean_co2_conv(ocp, Z)
+    Xt = outlet_conv(ocp, Z)
+    Xend, Xmean = Xt[end], mean_conv(ocp, Z)
     ignited = Xend > 0.5 # Ingition proxy
     Jreg = γ * Ne * sum(((g.u[k+1] - g.u[k]) / (Tw_max - Tw_min))^2 for k in 1:Ne-1)
 
@@ -121,7 +121,7 @@ function plot_guess(res)
     p1 = plot(te, vcat(res.u, res.u[end]); seriestype=:steppost, lw=2, legend=false,
         xlabel="t [s]", ylabel="Tw [K]", title="control")
     hline!(p1, [ocp.Tw_max]; ls=:dash, lw=1, c=:gray)
-    p2 = plot(ts, co2_conv(ocp, res.Z); lw=2, legend=false, ylims=(0, 1),
+    p2 = plot(ts, outlet_conv(ocp, res.Z); lw=2, legend=false, ylims=(0, 1),
         xlabel="t [s]", ylabel="X_CO2 [-]", title="conversion")
     return plot(p1, p2; layout=(1, 2), size=(900, 360),
         left_margin=6Plots.mm, bottom_margin=6Plots.mm)

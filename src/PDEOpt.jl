@@ -13,6 +13,7 @@ include("timestepping/crank_nicolson.jl")
 include("timestepping/collocation.jl")
 include("optimization/initial_guess.jl")
 include("io/output.jl")
+include("io/vtkread.jl")
 
 using .StructuredMesh
 using .Properties
@@ -25,6 +26,7 @@ using .CrankNicolson
 using .Collocation
 using .InitialGuess
 using .Output
+using .VTKRead
 
 # FEM assembly
 export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advection!,
@@ -71,6 +73,9 @@ export dense_output
 
 # Output
 export write_vtk, write_control
+
+# Reading results back
+export VTRFile, VTRSeries, read_vtr, read_pvd, read_series, cellcentres
 
 # Optimization
 export bisect_shape, bisect_const, twshape

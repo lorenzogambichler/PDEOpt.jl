@@ -1,12 +1,11 @@
 tests/results/
 apps/forward_solvers/results/
 apps/optimal_control/results/
+tmp/
 *.vtu
 *.pvd
 *.vtr
 
-# Licensed HSL binaries — not redistributable. They stay outside the repo and
-# are pulled in via the `hsl` build context (see docker/Dockerfile); these
-# entries are a safety net in case a copy ever lands here.
+# Safeguard
 vendor/
 HSL_jll*/

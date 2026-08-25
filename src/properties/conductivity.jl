@@ -24,7 +24,7 @@ lambda_rad(T, ε_cat, dp) = 2.27e-7 * ε_cat / (2 - ε_cat) * T^3 * dp
 # λ^eff_r = λ_conv + λ_cond,r 
 # λ_conv = 1.15⋅ρ⋅v_z⋅cp,gas ⋅dp / (8[2 − (1 − dp/R)²])
 # λ_cond,r = (1 − √(1−ε))⋅(λ_gas + ε λ_r) + √(1−ε)⋅λ_rs
-# TODO λ_rs
+# TODO λ_rs (has negligible impact on solution)
 function lambda_eff_r(T, ρ, cp_gas, λ_gas, ε, ε_cat, dp, R, vz; λ_rs::Float64=0.0)
     λ_conv = 1.15 * ρ * vz * cp_gas * dp / (8 * (2 - (1 - dp / R)^2))
     λ_r = lambda_rad(T, ε_cat, dp)
