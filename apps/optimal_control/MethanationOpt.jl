@@ -7,8 +7,8 @@ includet("../../src/optimization/methanation_adnlp.jl")
 
 const SPECIES = (:CH4, :CO, :CO2, :H2O, :H2, :N2)
 
-function setup_problem(; nz=25, nr=3, L=5.0, R=0.01, Tw=650.0, vz=1.0)
-    grid = StructGrid2D(L, R, nz, nr)
+function setup_problem(; nz=25, nr=3, L=5.0, R=0.01, Tw=650.0, ratio=8.0)
+    grid = StructGrid2D(L, R, nz, nr; ratio=ratio)
     geom = Geometry2D(grid)
 
     (fs_axial, fs_radial) = interior_faces(grid)
@@ -23,6 +23,7 @@ function setup_problem(; nz=25, nr=3, L=5.0, R=0.01, Tw=650.0, vz=1.0)
     fields = (SPECIES..., :T)
     dm = DofMap(ncells(grid), fields)
 
+    vz = 1.0
     T0, p0, Rgas = 400.0, 5.0e5, 8.314
     Mα = (CH4=0.016043, CO=0.028010, CO2=0.044010, H2O=0.018015, H2=0.0020159, N2=0.0280134)
     xin = (CH4=1e-5, CO=1e-5, CO2=0.2, H2O=1e-5, H2=0.8, N2=1e-5)
@@ -75,9 +76,9 @@ zoh(u::AbstractVector, Δt::Float64) =
     t -> u[clamp(floor(Int, t / Δt) + 1, 1, length(u))]
 
 # CN forward solve for given Tw(t)
-function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; nz=25, nr=3, hook=(y, prob) -> nothing,
-    recon::Symbol=:vanalbada)
-    prob, sa, y0 = setup_problem(; nz=nz, nr=nr, Tw=Twfun)
+function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; nz=25, nr=3, ratio=8.0,
+    hook=(y, prob) -> nothing, recon::Symbol=:vanalbada)
+    prob, sa, y0 = setup_problem(; nz=nz, nr=nr, ratio=ratio, Tw=Twfun)
     N = round(Int, tf / Δt_cn) + 1
     cache = CNCache(prob, Δt_cn, N)
     for field in prob.dm.fields
@@ -142,7 +143,6 @@ function main(; recon::Symbol=:vanalbada)
         Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, recon=recon)
     x0 = vcat(vec(Zguess), uguess)
 
-    # Check ϵ
     Td = fielddof(prob.dm, :T)
     Tg, idx = findmax(view(Zguess, Td, :))
     zhot = prob.geom.zc[cellij(prob.grid, idx[1])[1]]
@@ -153,8 +153,8 @@ function main(; recon::Symbol=:vanalbada)
     spmin < 0 && @warn "negative species density in CN guess -> limiter ε too large" spmin
 
     # Solve
-    res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-5, exact_hessian=false, show_time=true, 
-        limited_memory_max_history=75)
+    res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-5, exact_hessian=false,
+        show_time=true, limited_memory_max_history=75)
 
     # Print res
     Xguess = outlet_conv(ocp, Zguess)
@@ -167,26 +167,44 @@ function main(; recon::Symbol=:vanalbada)
         ", opt -> ", round(mean_conv(ocp, res.Z); digits=4))
     println("Tw: ", round.(res.u; digits=1))
 
-    # Re-sim with CN, validate constraints on fine grid
+    # Re-sim with CN
+    res_cn_coarse, sa_cn_coarse = cn_forward(zoh(res.u, Δt), tf, Δt_resim; recon=recon)
     res_cn, sa_cn = cn_forward(zoh(res.u, Δt), tf, Δt_resim; nz=nz_resim, nr=nr_resim, recon=recon)
+    guess_cn_coarse, _ = cn_forward(zoh(uguess, Δt), tf, Δt_resim; recon=recon)
     guess_cn, _ = cn_forward(zoh(uguess, Δt), tf, Δt_resim; nz=nz_resim, nr=nr_resim, recon=recon)
 
-    # Compare (re-sim on fine grid -> own dm/sa)
+    Tnlp = round(maximum(view(res.Z, Td, :)); digits=2)
+    Xnlp = round(mean_conv(ocp, res.Z); digits=4)
+
+    # Transcription check (Δt -> Δt_resim)
+    Td_cc = fielddof(res_cn_coarse.prob.dm, :T)
+    Tpk_cc = maximum(view(res_cn_coarse.y, Td_cc, :))
+    Xbar_cc = mean_conv(ocp, outlet_conv(sa_cn_coarse,
+        resample(res_cn_coarse.y, Δt_resim, timegrid(ocp))))
+    println("re-sim on the NLP grid (", res_cn_coarse.prob.grid.nz, " by ",
+        res_cn_coarse.prob.grid.nr, ", Δt_cn = ", Δt_resim, "), time refinement only:")
+    println("  T_max -> ", round(Tpk_cc; digits=2), " K, NLP -> ", Tnlp,
+        " K (constraint: ", Tmax, " K)")
+    println("  mean X_CO2 -> ", round(Xbar_cc; digits=4), ", NLP -> ", Xnlp)
+
+    # Feasibility check (coarse -> fine grid, own dm/sa)
     Td_cn = fielddof(res_cn.prob.dm, :T)
     Tpk_cn = maximum(view(res_cn.y, Td_cn, :))
     Xbar_cn = mean_conv(ocp, outlet_conv(sa_cn, resample(res_cn.y, Δt_resim, timegrid(ocp))))
     println("grid: NLP ", prob.grid.nz, " by ", prob.grid.nr,
         " -> re-sim ", res_cn.prob.grid.nz, " by ", res_cn.prob.grid.nr)
-    println("T_max: (Δt_cn = ", Δt_resim, ") -> ", round(Tpk_cn; digits=2),
-        " K, NLP -> ", round(maximum(view(res.Z, Td, :)); digits=2), " K (constraint: ", Tmax, " K)")
-    println("mean X_CO2: (Δt_cn = ", Δt_resim, ") -> ", round(Xbar_cn; digits=4),
-        ", NLP -> ", round(mean_conv(ocp, res.Z); digits=4))
+    println("  T_max: (Δt_cn = ", Δt_resim, ") -> ", round(Tpk_cn; digits=2),
+        " K, NLP -> ", Tnlp, " K (constraint: ", Tmax, " K)")
+    println("  mean X_CO2: (Δt_cn = ", Δt_resim, ") -> ", round(Xbar_cn; digits=4),
+        ", NLP -> ", Xnlp)
 
     # Save res
     ts_plot = collect(0.0:Δt_plot:tf)
     resultsdir = joinpath(@__DIR__, "results/Methanation/")
-    write_vtk(joinpath(resultsdir, "opt_state"), res_cn.prob, dense_output(res_cn, ts_plot), ts_plot)
-    write_vtk(joinpath(resultsdir, "guess_state"), guess_cn.prob, dense_output(guess_cn, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "opt_coarse_state"), res_cn_coarse.prob, dense_output(res_cn_coarse, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "guess_coarse_state"), guess_cn_coarse.prob, dense_output(guess_cn_coarse, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "opt_fine_state"), res_cn.prob, dense_output(res_cn, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "guess_fine_state"), guess_cn.prob, dense_output(guess_cn, ts_plot), ts_plot)
     write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
     write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
 end
