@@ -1,5 +1,6 @@
 module PDEOpt
 
+include("diagnostics/diagnostics.jl")
 include("mesh/structured_grid.jl")
 include("properties/properties.jl")
 include("models/models.jl")
@@ -15,6 +16,7 @@ include("optimization/initial_guess.jl")
 include("io/output.jl")
 include("io/vtkread.jl")
 
+using .Diagnostics
 using .StructuredMesh
 using .Properties
 using .Models
@@ -79,5 +81,9 @@ export VTRFile, VTRSeries, read_vtr, read_pvd, read_series, cellcentres
 
 # Optimization
 export bisect_shape, bisect_const, twshape
+
+# Profiling
+export MemTrace, memtrace,
+    capture_stdout, IpoptTiming, parse_ipopt_timing, read_ipopt_timing, print_timing
 
 end

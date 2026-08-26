@@ -118,7 +118,28 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, T
     return g.Z, g.u
 end
 
-function main(; recon::Symbol=:vanalbada)
+# solve_ocp with memory sampler, needs julia -t 3 (main, sampler, reader)
+function solve_profiled(ocp, x0, logpath::String; full::Bool=true, kwargs...)
+    (res, log), tr = memtrace() do
+        capture_stdout() do
+            solve_ocp(ocp, x0; kwargs...)
+        end
+    end
+
+    mkpath(dirname(logpath)) # reload later with read_ipopt_timing(logpath)
+    write(logpath, log)
+
+    println()
+    try
+        print_timing(parse_ipopt_timing(log); full=full)
+    catch e
+        @warn "could not parse the ipopt timing table" e # don't lose res
+    end
+    display(tr)
+    return res
+end
+
+function main(; recon::Symbol=:vanalbada, profile::Bool=false)
     # Params
     tf = 750.0
     Ne = 30 # finite elements
@@ -129,6 +150,7 @@ function main(; recon::Symbol=:vanalbada)
     Tw_min, Tw_max, Tmax = 300.0, 650.0, 750.0
     γ = 0.01
     nz_resim, nr_resim = 75, 5
+    resultsdir = joinpath(@__DIR__, "results/Methanation/")
 
     # Problem
     prob, sa, y0 = setup_problem()
@@ -153,8 +175,10 @@ function main(; recon::Symbol=:vanalbada)
     spmin < 0 && @warn "negative species density in CN guess -> limiter ε too large" spmin
 
     # Solve
-    res = solve_ocp(ocp, x0; print_level=5, max_iter=200, tol=1e-5, exact_hessian=false,
+    opts = (print_level=5, max_iter=200, tol=1e-5, exact_hessian=false,
         show_time=true, limited_memory_max_history=75)
+    res = profile ? solve_profiled(ocp, x0, joinpath(resultsdir, "ipopt.log"); opts...) :
+          solve_ocp(ocp, x0; opts...)
 
     # Print res
     Xguess = outlet_conv(ocp, Zguess)
@@ -200,7 +224,6 @@ function main(; recon::Symbol=:vanalbada)
 
     # Save res
     ts_plot = collect(0.0:Δt_plot:tf)
-    resultsdir = joinpath(@__DIR__, "results/Methanation/")
     write_vtk(joinpath(resultsdir, "opt_coarse_state"), res_cn_coarse.prob, dense_output(res_cn_coarse, ts_plot), ts_plot)
     write_vtk(joinpath(resultsdir, "guess_coarse_state"), guess_cn_coarse.prob, dense_output(guess_cn_coarse, ts_plot), ts_plot)
     write_vtk(joinpath(resultsdir, "opt_fine_state"), res_cn.prob, dense_output(res_cn, ts_plot), ts_plot)
