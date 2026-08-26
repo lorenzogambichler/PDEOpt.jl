@@ -2,6 +2,7 @@ ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "4")
 using LinearAlgebra
 using SparseArrays
 using PDEOpt
+using Revise
 
 includet("../../src/optimization/methanation_adnlp.jl")
 
@@ -230,4 +231,8 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false)
     write_vtk(joinpath(resultsdir, "guess_fine_state"), guess_cn.prob, dense_output(guess_cn, ts_plot), ts_plot)
     write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
     write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
 end

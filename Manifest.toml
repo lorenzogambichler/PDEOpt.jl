@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.1"
-project_hash = "086ae5edcb6f7def5b931d17fd3c3e43af05b0c2"
+project_hash = "a308851da9523566415acee86ba145966c896643"
 
 [[deps.ADNLPModels]]
 deps = ["ADTypes", "ForwardDiff", "LinearAlgebra", "NLPModels", "Requires", "ReverseDiff", "SparseArrays", "SparseConnectivityTracer", "SparseMatrixColorings"]
@@ -250,6 +250,12 @@ weakdeps = ["SparseArrays"]
     [deps.ChainRulesCore.extensions]
     ChainRulesCoreSparseArraysExt = "SparseArrays"
 
+[[deps.CodeTracking]]
+deps = ["InteractiveUtils", "REPL", "UUIDs"]
+git-tree-sha1 = "cfb7a2e89e245a9d5016b70323db412b3a7438d5"
+uuid = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
+version = "3.0.2"
+
 [[deps.CodecBzip2]]
 deps = ["Bzip2_jll", "TranscodingStreams"]
 git-tree-sha1 = "84990fa864b7f2b4901901ca12736e45ee79068c"
@@ -326,6 +332,11 @@ weakdeps = ["Dates", "LinearAlgebra"]
 
     [deps.Compat.extensions]
     CompatLinearAlgebraExt = "LinearAlgebra"
+
+[[deps.Compiler]]
+git-tree-sha1 = "382d79bfe72a406294faca39ef0c3cef6e6ce1f1"
+uuid = "807dbc54-b67e-4c79-8afb-eafe4df6f2e1"
+version = "0.1.1"
 
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
@@ -1196,6 +1207,12 @@ version = "1.30.1"
     [deps.JuMP.weakdeps]
     DimensionalData = "0703355e-b756-11e9-17c0-8b28908087d0"
 
+[[deps.JuliaInterpreter]]
+deps = ["CodeTracking", "InteractiveUtils", "Random", "UUIDs"]
+git-tree-sha1 = "c3d401f110454b4ea24a76be33f6ee0d7d385103"
+uuid = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
+version = "0.11.4"
+
 [[deps.JuliaSyntaxHighlighting]]
 deps = ["StyledStrings"]
 uuid = "ac6e5ff7-fb65-4e79-a425-ec3bc9c03011"
@@ -1492,6 +1509,12 @@ deps = ["Dates", "Logging"]
 git-tree-sha1 = "f00544d95982ea270145636c181ceda21c4e2575"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.2.0"
+
+[[deps.LoweredCodeUtils]]
+deps = ["CodeTracking", "Compiler", "JuliaInterpreter"]
+git-tree-sha1 = "1d4c737ab26f51ceed52ab2019c09b7660eb7440"
+uuid = "6f1432cf-f94c-5a45-995e-cdbf5db27b0b"
+version = "3.8.0"
 
 [[deps.METIS_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1915,7 +1938,7 @@ uuid = "efcefdf7-47ab-520b-bdef-62a2eaa19f15"
 version = "10.44.0+1"
 
 [[deps.PDEOpt]]
-deps = ["ADNLPModels", "CairoMakie", "Ferrite", "ForwardDiff", "HSL", "HSL_jll", "Ipopt", "JuMP", "LinearAlgebra", "NLPModelsIpopt", "OrdinaryDiffEq", "OrdinaryDiffEqSDIRK", "Plots", "Printf", "ProtoStructs", "Serialization", "SparseArrays", "WriteVTK"]
+deps = ["ADNLPModels", "CairoMakie", "CodecZlib", "Ferrite", "ForwardDiff", "HSL", "HSL_jll", "Ipopt", "JuMP", "LightXML", "LinearAlgebra", "NLPModelsIpopt", "OrdinaryDiffEq", "OrdinaryDiffEqSDIRK", "Plots", "Printf", "ProtoStructs", "Serialization", "SparseArrays", "WriteVTK"]
 path = "."
 uuid = "fd37fd2c-7a97-4c71-b539-a50472a13087"
 version = "0.1.0"
@@ -2237,6 +2260,16 @@ deps = ["ChainRulesCore", "DiffResults", "DiffRules", "ForwardDiff", "FunctionWr
 git-tree-sha1 = "f5f3c09103951beae390666a18e084655996370b"
 uuid = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 version = "1.17.0"
+
+[[deps.Revise]]
+deps = ["CRC32c", "CodeTracking", "FileWatching", "JuliaInterpreter", "LibGit2", "LoweredCodeUtils", "OrderedCollections", "Preferences", "REPL", "UUIDs"]
+git-tree-sha1 = "f6ad10ad2fa1063c2ae0f75d17d92d1d0cae4c77"
+uuid = "295af30f-e4ad-537b-8983-00126c2a3abe"
+version = "3.16.5"
+weakdeps = ["Distributed"]
+
+    [deps.Revise.extensions]
+    DistributedExt = "Distributed"
 
 [[deps.Rmath]]
 deps = ["Random", "Rmath_jll"]

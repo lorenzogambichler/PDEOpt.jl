@@ -2,6 +2,7 @@ ENV["OMP_NUM_THREADS"] = "4"
 using LinearAlgebra
 using SparseArrays
 using PDEOpt
+using Revise
 
 includet("../../src/optimization/plugFlow_jump.jl")
 
@@ -110,4 +111,8 @@ function main()
     write_vtk(joinpath(resultsdir, "opt"), prob, res.y, Δt, N)
     write_vtk(joinpath(resultsdir, "forward"), cn)
     write_control(joinpath(resultsdir, "control.csv"), res.u, Δt, N)
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
 end

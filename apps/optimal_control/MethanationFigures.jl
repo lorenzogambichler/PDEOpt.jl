@@ -78,14 +78,22 @@ function outlet_conv(s::VTRSeries, f::AbstractString="CO2")
     return [1 - sum(A .* x[end, :, n]) / feed for n in axes(x, 3)]
 end
 
-# cell edges from sample points (heatmaps)
-function edges(c::AbstractVector)
-    length(c) == 1 && return [c[1] - 0.5, c[1] + 0.5]
-    e = similar(c, length(c) + 1)
-    e[2:end-1] .= 0.5 .* (c[1:end-1] .+ c[2:end])
-    e[1] = c[1] - (c[2] - c[1]) / 2
-    e[end] = c[end] + (c[end] - c[end-1]) / 2
-    return e
+# FV data lives at cell centres, but plotting only those crops the domain by half a
+# cell each side (a sixth of R at nr = 3). Extend the sample grid to the domain edges
+# and repeat the boundary cells, so the field is piecewise linear and still spans z, r.
+padcentres(nodes::AbstractVector) = vcat(nodes[1], cellcentres(nodes), nodes[end])
+
+function padends(A::AbstractMatrix, dim::Int)
+    i = vcat(1, axes(A, dim)..., size(A, dim))
+    return dim == 1 ? A[i, :] : A[:, i]
+end
+
+# Interpolated field on a non-uniform grid, heatmap(interpolate=true) needs a uniform one.
+# rasterize keeps the pdf sane: one gouraud triangle per quad is ~80x the file size,
+# and only affects the field, axes and text stay vector.
+function smoothfield!(ax, x, y, C; rasterize=4, kwargs...)
+    surface!(ax, x, y, zeros(length(x), length(y));
+        color=C, shading=NoShading, rasterize=rasterize, kwargs...)
 end
 
 # ZOH u
@@ -186,7 +194,8 @@ function fig_spacetime(cases::Vector{Case}; field="T", unit="K")
             ylabel=i == 1 ? "z / m" : "",
             title=c.name)
         i > 1 && hideydecorations!(ax; grid=false)
-        hm = heatmap!(ax, edges(c.s.t), c.s.z, permutedims(M);
+        # t is already a sample point, only z needs the cell-centre treatment
+        hm = smoothfield!(ax, c.s.t, padcentres(c.s.z), permutedims(padends(M, 1));
             colorrange=(lo, hi), colormap=CMAP_T)
         xlims!(ax, c.s.t[1], c.s.t[end])
         ylims!(ax, c.s.z[1], c.s.z[end])
@@ -216,7 +225,8 @@ function fig_snapshots(cases::Vector{Case};
             yticks=[0, 5, 10], title=row == 1 ? c.name : "")
         col > 1 && hideydecorations!(ax)
         row < nrow && hidexdecorations!(ax)
-        hm = heatmap!(ax, c.s.z, c.s.r .* 1e3, c.s[field][:, :, idx[col, row]];
+        C = padends(padends(c.s[field][:, :, idx[col, row]], 1), 2)
+        hm = smoothfield!(ax, padcentres(c.s.z), padcentres(c.s.r) .* 1e3, C;
             colorrange=(lo, hi), colormap=CMAP_T)
     end
     # tellheight=false so rows do not collapse to the label height
@@ -285,7 +295,7 @@ function makefigures(; formats=("pdf", "png"))
     figs = with_theme(figtheme()) do
         ["control" => fig_control([coarse, guess_coarse]),
             "spacetime" => fig_spacetime([coarse, fine]),
-            "snapshots" => fig_snapshots([fine]),
+            "snapshots" => fig_snapshots([coarse]),
             "conversion" => fig_conversion([coarse, guess_coarse];
                 title="Outlet conversion (NLP grid)"),
             "conversion_validation" => fig_conversion([fine, coarse];
