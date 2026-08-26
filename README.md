@@ -15,7 +15,7 @@ Possible application examples include
 
 Two-dimensional pseudo-homogeneous fixed bed, cylindrical and radially symmetric in
 $(z,r)$, axial advection only (no axial dispersion), cooling wall at $r = R$. State
-$(\rho_i, T)$ with $i \in \{\mathrm{CH_4, CO, CO_2, H_2O, H_2, N_2}\}$, Xu–Froment LHHW
+$(\rho_i, T)$ with $i \in$ {$\mathrm{CH_4, CO, CO_2, H_2O, H_2, N_2}$}, Xu–Froment LHHW
 kinetics for three reactions.
 
 $$\varepsilon\partial_t \rho_i+ v_z\partial_z \rho_i = \frac{1}{r}\partial_r\big(rD^{\text{eff}}_{r,i}\partial_r \rho_i\big) + (1-\varepsilon)M_i \sum_j \nu_{i,j}\tilde{r}_j(\rho, T)$$
@@ -85,3 +85,7 @@ The CO$_2$ methanation model is taken from (slightly modified):
   fixed-bed reactor for power-to-gas applications*, AIChE Journal 63 (2017) 23–31.
 - J. Xu, G. F. Froment, *Methane steam reforming, methanation and water-gas shift: I.
   Intrinsic kinetics*, AIChE Journal 35 (1989) 88–96.
+
+## License
+
+Released under the [MIT License](LICENSE).
