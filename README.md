@@ -6,7 +6,7 @@ Possible application examples include
 - Adsorption/Absorption columns
 - Simulated Moving Bed Chromatography
 
-## Example: CO$_2$ Methanation
+## Example: CO₂ Methanation
 
 <p align="center">
   <img src="figs/methanation_control.png" width="90%">
@@ -14,19 +14,19 @@ Possible application examples include
 </p>
 
 Two-dimensional pseudo-homogeneous fixed bed, cylindrical and radially symmetric in
-$(z,r)$, axial advection only (no axial dispersion), cooling wall at $r = R$. State
-$(\rho_i, T)$ with $i \in$ {$\mathrm{CH_4, CO, CO_2, H_2O, H_2, N_2}$}, Xu–Froment LHHW
+$`(z,r)`$, axial advection only (no axial dispersion), cooling wall at $`r = R`$. State
+$`(\rho_i, T)`$ with $`i \in \{\mathrm{CH_4, CO, CO_2, H_2O, H_2, N_2}\}`$, Xu–Froment LHHW
 kinetics for three reactions.
 
 $$\varepsilon\partial_t \rho_i+ v_z\partial_z \rho_i = \frac{1}{r}\partial_r\big(rD^{\text{eff}}_{r,i}\partial_r \rho_i\big) + (1-\varepsilon)M_i \sum_j \nu_{i,j}\tilde{r}_j(\rho, T)$$
 
 $$(\rho c_p)^{\text{eff}}\partial_t T + \rho c_{p,\text{gas}}v_z\partial_z T = \frac{1}{r}\partial_r\big(r\lambda^{\text{eff}}_r\partial_r T\big) - (1-\varepsilon) \sum_j \Delta H_j\tilde{r}_j(\rho, T)$$
 
-with ideal-gas pressure $p = \sum_i (\rho_i/M_i)RT$ and the wall condition
-$-\lambda^{\text{eff}}_r\partial_r T|_{r=R} = k_w(T - T_w(t))$.
+with ideal-gas pressure $`p = \sum_i (\rho_i/M_i)RT`$ and the wall condition
+$`-\lambda^{\text{eff}}_r\partial_r T|_{r=R} = k_w(T - T_w(t))`$.
 
-Every transport coefficient ($D^{\text{eff}}_{r,i}$, $\lambda^{\text{eff}}_r$,
-$(\rho c_p)^{\text{eff}}$) depends on the state.
+Every transport coefficient ($`D^{\text{eff}}_{r,i}`$, $`\lambda^{\text{eff}}_r`$,
+$`(\rho c_p)^{\text{eff}}`$) depends on the state.
 
 ### Method
 
@@ -34,18 +34,18 @@ Spatial discretization gives the quasi-linear implicit ODE system
 
 $$M(y)\dot y = -K(y)y + r(y) + b(t,u),$$
 
-with $M$ diagonal, $K$ the transport operator, $r$ the reaction source, and $b$ affine in
+with $`M`$ diagonal, $`K`$ the transport operator, $`r`$ the reaction source, and $`b`$ affine in
 the control.
 
 | | |
 |---|---|
 | Spatial scheme | Cell-centred FVM, upwind advection with van Albada limiter, central radial diffusion |
-| Temporal scheme | Radau IIA, $s=3$ stages |
+| Temporal scheme | Radau IIA, $`s=3`$ stages |
 | Transcription | Full-space / simultaneous |
 | Solver | IPOPT with HSL MA97 (optional) |
 | Derivatives | Analytic objective gradient, sparse AD Jacobian, limited-memory Hessian |
-| Cost function | Maximize average CO$_2$ conversion over $[0,t_f]$
-| Path constraint | $T \le T_{\max}$ at collocation nodes |
+| Cost function | Maximize average CO₂ conversion over $`[0,t_f]`$
+| Path constraint | $`T \le T_{\max}`$ at collocation nodes |
 
 ## Usage
 
@@ -79,7 +79,7 @@ julia --project apps/optimal_control/MethanationOpt.jl
 
 ## References
 
-The CO$_2$ methanation model is taken from (slightly modified):
+The CO₂ methanation model is taken from (slightly modified):
 
 - J. Bremer, K. H. G. Rätze, K. Sundmacher, *CO₂ methanation: Optimal start-up control of a
   fixed-bed reactor for power-to-gas applications*, AIChE Journal 63 (2017) 23–31.
