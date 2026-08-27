@@ -61,6 +61,23 @@ Run the methanation optimal control problem:
 julia --project apps/optimal_control/MethanationOpt.jl
 ```
 
+### Docker
+
+[`docker/Dockerfile`](docker/Dockerfile) builds an image with the Julia env
+precompiled and HSL linked.
+
+```bash
+docker build -f docker/Dockerfile -t pdeopt:0.1 \
+  --build-context hsl=/path/to/HSL_jll.jl.v2025.7.21 \
+  --build-arg JULIA_CPU_TARGET=native .
+```
+
+```bash
+docker/run.sh # methanation OCP
+docker/run.sh apps/forward_solvers/Methanation.jl # other driver
+DETACH=1 NAME=meth-01 docker/run.sh # long run
+```
+
 ## Layout
 
 | path | contents |

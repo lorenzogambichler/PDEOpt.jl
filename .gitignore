@@ -2,6 +2,7 @@ tests/results/
 apps/forward_solvers/results/
 apps/optimal_control/results/
 tmp/
+notes/
 *.vtu
 *.pvd
 *.vtr

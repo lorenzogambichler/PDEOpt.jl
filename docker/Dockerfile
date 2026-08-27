@@ -21,14 +21,13 @@ COPY --from=hsl . /opt/HSL_jll
 # Julia env
 COPY Project.toml Manifest.toml ./
 
+RUN mkdir -p src && printf 'module PDEOpt end\n' > src/PDEOpt.jl
+
 RUN julia -e 'using Pkg; Pkg.develop(path="/opt/HSL_jll"); Pkg.instantiate(); Pkg.precompile()'
 
 # Source
 COPY src ./src
 COPY apps ./apps
-COPY tests ./tests
-
-RUN sed -i 's/^includet(/include(/' apps/optimal_control/*.jl apps/forward_solvers/*.jl
 
 RUN julia -e 'using Pkg; Pkg.precompile()'
 

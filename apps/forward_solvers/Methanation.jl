@@ -118,7 +118,7 @@ function main()
 
     # IC
     for field in prob.dm.fields
-        set_ic!(cache, field, inlet_mod(model, field, 0.0))
+        set_ic!(cache, field, inlet_mod(prob.model, field, 0.0))
     end
 
     # Solve (state-dependent -> reassemble!) and write results
@@ -130,4 +130,8 @@ function main()
     @printf("%9s %7s %9s\n", "f-evals", "jacs", "steps")
     @printf("%9d %7d %9d\n", cache.stats.nf, cache.stats.nfact, N-1)
     #@printf("%9s %7f\n", "Tmax at t=400s: ", max(cache.y[:,800]))
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
 end
