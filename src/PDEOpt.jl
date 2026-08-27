@@ -12,7 +12,6 @@ include("solvers/nonlinear.jl")
 function dense_output end
 include("timestepping/crank_nicolson.jl")
 include("timestepping/collocation.jl")
-include("optimization/initial_guess.jl")
 include("io/output.jl")
 include("io/vtkread.jl")
 
@@ -26,7 +25,6 @@ using .AssembleFVM
 using .NonlinearSolvers
 using .CrankNicolson
 using .Collocation
-using .InitialGuess
 using .Output
 using .VTKRead
 
@@ -40,7 +38,7 @@ export advection_flux, diffusion_flux,
     assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
     assemble_react!, assemble_boundary!, StateAssembly,
     face_flux, bnd_energy_kernel,
-    vanalbada, antidiff_eps, assemble_antidiffusion!
+    vanalbada, antidiff_eps, AntiDiffusion, assemble_antidiffusion!
 
 # Tensor grid connectivity, geometry, DOF map, sparsitiy pattern
 export AbstractGrid, AbstractGeometry,
@@ -78,9 +76,6 @@ export write_vtk, write_control
 
 # Reading results back
 export VTRFile, VTRSeries, read_vtr, read_pvd, read_series, cellcentres
-
-# Optimization
-export bisect_shape, bisect_const, twshape
 
 # Profiling
 export MemTrace, memtrace,

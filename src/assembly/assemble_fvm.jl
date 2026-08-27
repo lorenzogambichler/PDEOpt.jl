@@ -10,7 +10,7 @@ export advection_flux, diffusion_flux,
     assemble_mass!, assemble_transport!, assemble_inlet_outlet!, assemble_wall!,
     assemble_react!, assemble_boundary!, StateAssembly,
     face_flux, bnd_energy_kernel,
-    vanalbada, antidiff_eps, assemble_antidiffusion!
+    vanalbada, antidiff_eps, AntiDiffusion, assemble_antidiffusion!
 
 function advection_flux(βn::Real, area::Real)
     F = βn * area
@@ -262,6 +262,33 @@ end
 # ε for vanalbada (dependent)
 antidiff_eps(yref::AbstractVector, href::Real; rel::Real=1e-3) =
     [(rel * yr / href)^2 for yr in yref]
+
+# 2nd-order axial advection (nothing = 1st order)
+struct AntiDiffusion
+    st::UpwindStencil
+    fs::FaceSet # axial
+    fg::FaceGeometry # axial
+    εf::Vector{Float64} # ε limiter (per-field))
+end
+
+# Axial (fs, fg) from sa.dirs
+function _axial_dir(sa::StateAssembly)
+    i = findfirst(d -> first(d).axis == 1, sa.dirs)
+    isnothing(i) && error("no axial (axis 1) face set in StateAssembly.dirs")
+    return sa.dirs[i]
+end
+
+function AntiDiffusion(sa::StateAssembly, y0::Vector{Float64};
+    ΔT::Float64=450.0, rel::Float64=1e-3)
+    prob = sa.prob
+    dm, m, grid, geom = prob.dm, prob.model, prob.grid, prob.geom
+    nsp = nspecies(m)
+    ctot = sum(y0[dof(dm, 1, α)] / m.M[α] for α in 1:nsp)
+    yref = [fi <= nsp ? ctot * m.M[fi] : ΔT for fi in 1:length(dm.fields)]
+    fs, fg = _axial_dir(sa)
+    st = UpwindStencil(grid, geom, fs)
+    return AntiDiffusion(st, fs, fg, antidiff_eps(yref, minimum(geom.dz); rel=rel))
+end
 
 # 2nd-order axial advection correction (face value y_f = y_o  -> y_f = y_o + ψ(a,b)·df)
 # Flux F = βf·Δy·A -> add to r(y), r[owner] -= F, r[neighbor] += F

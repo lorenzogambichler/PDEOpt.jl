@@ -4,7 +4,7 @@ using SparseArrays
 using PDEOpt
 using Revise
 
-includet("../../src/optimization/plugFlow_jump.jl")
+includet("../../src/optimization/plug_flow/jump_model.jl")
 
 function setup_problem()
     # StructGrid2D, Geometry

@@ -1,9 +1,3 @@
-module InitialGuess
-
-using Printf
-
-export bisect_shape, bisect_const, twshape
-
 # Dynamic initial guess
 # Fix shape s(τ) ∈ [0,1] and bisect λ, u(t; λ) = λ + (Tw_max - λ) * s(t/tf)
 # ∂u/∂λ = 1 - s ≥ 0 -> peak is monotone in λ, bisection still applies
@@ -83,6 +77,4 @@ function bisect_const(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
     end
     Z, Tw, Tpk = best
     return (Z=Z, u=fill(Tw, Ne), Tpk=Tpk, Tw=Tw, it=it, conv=true)
-end
-
 end

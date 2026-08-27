@@ -4,7 +4,7 @@ using SparseArrays
 using PDEOpt
 using Revise
 
-includet("../../src/optimization/methanation_adnlp.jl")
+includet("../../src/optimization/methanation/methanation_ocp.jl")
 
 const SPECIES = (:CH4, :CO, :CO2, :H2O, :H2, :N2)
 
