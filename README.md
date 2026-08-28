@@ -18,9 +18,9 @@ $`(z,r)`$, axial advection only (no axial dispersion), cooling wall at $`r = R`$
 $`(\rho_i, T)`$ with $`i \in \{\mathrm{CH_4, CO, CO_2, H_2O, H_2, N_2}\}`$, Xu–Froment LHHW
 kinetics for three reactions.
 
-$$\varepsilon\partial_t \rho_i+ v_z\partial_z \rho_i = \frac{1}{r}\partial_r\big(rD^{\text{eff}}_{r,i}\partial_r \rho_i\big) + (1-\varepsilon)M_i \sum_j \nu_{i,j}\tilde{r}_j(\rho, T)$$
+$$\varepsilon\partial_t \rho_i+ v_z\partial_z \rho_i = \frac{1}{r}\partial_r\big(rD^{\text{eff}}_{r,i}\partial_r \rho_i\big) + (1-\varepsilon)M_i \sum_j \nu_{i,j} r_j(\rho, T)$$
 
-$$(\rho c_p)^{\text{eff}}\partial_t T + \rho c_{p,\text{gas}}v_z\partial_z T = \frac{1}{r}\partial_r\big(r\lambda^{\text{eff}}_r\partial_r T\big) - (1-\varepsilon) \sum_j \Delta H_j\tilde{r}_j(\rho, T)$$
+$$(\rho c_p)^{\text{eff}}\partial_t T + \rho c_{p,\text{gas}}v_z\partial_z T = \frac{1}{r}\partial_r\big(r\lambda^{\text{eff}}_r\partial_r T\big) - (1-\varepsilon) \sum_j \Delta H_j r_j(\rho, T)$$
 
 with ideal-gas pressure $`p = \sum_i (\rho_i/M_i)RT`$ and the wall condition
 $`-\lambda^{\text{eff}}_r\partial_r T|_{r=R} = k_w(T - T_w(t))`$.

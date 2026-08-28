@@ -1,11 +1,11 @@
 const GiB = 1024^3
 
-# resident set of this process, @allocated/Profile.Allocs only see the gc heap
+# resident set of process (@allocated/Profile.Allocs only gc heap)
 function _rss()
     @static if Sys.islinux()
         return parse(Int, split(read("/proc/self/statm", String))[2]) * Sys.PAGESIZE
     else
-        return Int(Sys.maxrss()) # peak, not current
+        return Int(Sys.maxrss()) # peak
     end
 end
 
@@ -16,7 +16,7 @@ struct MemTrace
     peak::Int
 end
 
-# ma97's factors live outside the gc heap, so rss - jl is where they show up
+# ma97
 foreign(tr::MemTrace) = tr.rss .- tr.jl
 
 # run f while sampling memory -> (result, MemTrace)
@@ -32,7 +32,7 @@ function memtrace(f; dt::Float64=0.1)
     sample!()
     sampler = Threads.@spawn while !stop[]
         sample!()
-        sleep(dt)
+        Libc.systemsleep(dt)
     end
 
     out = try
@@ -47,10 +47,9 @@ end
 
 const _BLK = ('▁', '▂', '▃', '▄', '▅', '▆', '▇', '█')
 
-# bucket-max sparkline, w chars wide
-function _spark(v::AbstractVector, w::Int=48)
+# bucket-max sparkline
+function _spark(v::AbstractVector, lo::Real, hi::Real, w::Int=48)
     isempty(v) && return ""
-    lo, hi = extrema(v)
     n = min(w, length(v))
     hi <= lo && return String(fill(_BLK[1], n))
     s = Vector{Char}(undef, n)
@@ -67,8 +66,9 @@ function Base.show(io::IO, ::MIME"text/plain", tr::MemTrace)
     fo = foreign(tr)
     @printf(io, "MemTrace: %.1f s, %d samples, peak rss %.2f GiB\n",
         tr.t[end], length(tr.t), tr.peak / GiB)
+    hi = maximum(tr.rss) # common scale -> foreign + julia = rss
     for (name, v) in (("rss", tr.rss), ("foreign", fo), ("julia", tr.jl))
         @printf(io, "  %-7s %s %6.2f -> %6.2f GiB (max %.2f)\n",
-            name, _spark(v), v[1] / GiB, v[end] / GiB, maximum(v) / GiB)
+            name, _spark(v, 0, hi), v[1] / GiB, v[end] / GiB, maximum(v) / GiB)
     end
 end

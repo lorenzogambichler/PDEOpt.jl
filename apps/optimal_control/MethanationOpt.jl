@@ -1,4 +1,4 @@
-ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "4")
+ENV["OMP_NUM_THREADS"] = get(ENV, "OMP_NUM_THREADS", "4") # set OpenMP threads
 using LinearAlgebra
 using SparseArrays
 using PDEOpt
@@ -119,20 +119,17 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, T
     return g.Z, g.u
 end
 
-# solve_ocp with memory sampler, needs julia -t 3 (main, sampler, reader)
+# solve_ocp with memory sampler, needs julia -t 2 (main, sampler)
 function solve_profiled(ocp, x0, logpath::String; full::Bool=true, kwargs...)
-    (res, log), tr = memtrace() do
-        capture_stdout() do
-            solve_ocp(ocp, x0; kwargs...)
-        end
-    end
+    mkpath(dirname(logpath))
 
-    mkpath(dirname(logpath)) # reload later with read_ipopt_timing(logpath)
-    write(logpath, log)
+    res, tr = memtrace() do
+        solve_ocp(ocp, x0; output_file=logpath, file_print_level=5, kwargs...)
+    end
 
     println()
     try
-        print_timing(parse_ipopt_timing(log); full=full)
+        print_timing(read_ipopt_timing(logpath); full=full)
     catch e
         @warn "could not parse the ipopt timing table" e # don't lose res
     end
@@ -178,19 +175,15 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false)
     # Solve
     opts = (print_level=5, max_iter=200, tol=1e-5, exact_hessian=false,
         show_time=true, limited_memory_max_history=75)
-    res = profile ? solve_profiled(ocp, x0, joinpath(resultsdir, "ipopt.log"); opts...) :
+    res = profile ? solve_profiled(ocp, x0, joinpath(resultsdir, "ipopt/ipopt.log"); opts...) :
           solve_ocp(ocp, x0; opts...)
 
     # Print res
     Xguess = outlet_conv(ocp, Zguess)
     Xopt = outlet_conv(ocp, res.Z)
     println("status: ", res.stats.status)
-    println("nvars = ", nvars(ocp), ", ncons = ", ncons(ocp))
-    println("X_CO2(tf):  guess -> ", round(Xguess[end]; digits=4),
-        ", opt -> ", round(Xopt[end]; digits=4))
-    println("mean X_CO2: guess -> ", round(mean_conv(ocp, Zguess); digits=4),
-        ", opt -> ", round(mean_conv(ocp, res.Z); digits=4))
-    println("Tw: ", round.(res.u; digits=1))
+    println("X_CO2_final: guess -> ", round(Xguess[end]; digits=4), ", opt -> ", round(Xopt[end]; digits=4))
+    println("X_CO2_mean:  guess -> ", round(mean_conv(ocp, Zguess); digits=4), ", opt -> ", round(mean_conv(ocp, res.Z); digits=4))
 
     # Re-sim with CN
     res_cn_coarse, sa_cn_coarse = cn_forward(zoh(res.u, Δt), tf, Δt_resim; recon=recon)
@@ -198,30 +191,22 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false)
     guess_cn_coarse, _ = cn_forward(zoh(uguess, Δt), tf, Δt_resim; recon=recon)
     guess_cn, _ = cn_forward(zoh(uguess, Δt), tf, Δt_resim; nz=nz_resim, nr=nr_resim, recon=recon)
 
-    Tnlp = round(maximum(view(res.Z, Td, :)); digits=2)
-    Xnlp = round(mean_conv(ocp, res.Z); digits=4)
-
     # Transcription check (Δt -> Δt_resim)
     Td_cc = fielddof(res_cn_coarse.prob.dm, :T)
     Tpk_cc = maximum(view(res_cn_coarse.y, Td_cc, :))
     Xbar_cc = mean_conv(ocp, outlet_conv(sa_cn_coarse,
         resample(res_cn_coarse.y, Δt_resim, timegrid(ocp))))
-    println("re-sim on the NLP grid (", res_cn_coarse.prob.grid.nz, " by ",
-        res_cn_coarse.prob.grid.nr, ", Δt_cn = ", Δt_resim, "), time refinement only:")
-    println("  T_max -> ", round(Tpk_cc; digits=2), " K, NLP -> ", Tnlp,
-        " K (constraint: ", Tmax, " K)")
-    println("  mean X_CO2 -> ", round(Xbar_cc; digits=4), ", NLP -> ", Xnlp)
+    println("re-sim on coarse grid (", res_cn_coarse.prob.grid.nz, " by ", res_cn_coarse.prob.grid.nr, ", Δt_cn = ", Δt_resim, "):")
+    println("  T_max = ", round(Tpk_cc; digits=2))
+    println("  X_CO2_mean = ", round(Xbar_cc; digits=4))
 
     # Feasibility check (coarse -> fine grid, own dm/sa)
     Td_cn = fielddof(res_cn.prob.dm, :T)
     Tpk_cn = maximum(view(res_cn.y, Td_cn, :))
     Xbar_cn = mean_conv(ocp, outlet_conv(sa_cn, resample(res_cn.y, Δt_resim, timegrid(ocp))))
-    println("grid: NLP ", prob.grid.nz, " by ", prob.grid.nr,
-        " -> re-sim ", res_cn.prob.grid.nz, " by ", res_cn.prob.grid.nr)
-    println("  T_max: (Δt_cn = ", Δt_resim, ") -> ", round(Tpk_cn; digits=2),
-        " K, NLP -> ", Tnlp, " K (constraint: ", Tmax, " K)")
-    println("  mean X_CO2: (Δt_cn = ", Δt_resim, ") -> ", round(Xbar_cn; digits=4),
-        ", NLP -> ", Xnlp)
+    println("re-sim on fine grid (", res_cn.prob.grid.nz, " by ", res_cn.prob.grid.nr, ", Δt_cn = ", Δt_resim, "):")
+    println("  T_max = ", round(Tpk_cn; digits=2))
+    println("  X_CO2_mean = ", round(Xbar_cn; digits=4))
 
     # Save res
     ts_plot = collect(0.0:Δt_plot:tf)

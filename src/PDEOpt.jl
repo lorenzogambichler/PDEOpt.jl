@@ -79,6 +79,6 @@ export VTRFile, VTRSeries, read_vtr, read_pvd, read_series, cellcentres
 
 # Profiling
 export MemTrace, memtrace,
-    capture_stdout, IpoptTiming, parse_ipopt_timing, read_ipopt_timing, print_timing
+    IpoptTiming, parse_ipopt_timing, read_ipopt_timing, print_timing
 
 end

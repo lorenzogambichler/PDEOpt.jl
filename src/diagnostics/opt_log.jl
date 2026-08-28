@@ -1,39 +1,3 @@
-# tee stdout at fd level, so ipopt's C-side output is caught too -> (result, log)
-function capture_stdout(f; echo::Bool=true)
-    Threads.nthreads() > 1 ||
-        @warn "single-threaded: reader will stall inside blocking ccalls, start julia with -t 2"
-
-    real = stdout
-    pipe = Pipe()
-    Base.link_pipe!(pipe; reader_supports_async=true, writer_supports_async=true)
-    buf = IOBuffer()
-
-    reader = Threads.@spawn while !eof(pipe)
-        data = readavailable(pipe)
-        write(buf, data)
-        if echo
-            write(real, data)
-            flush(real)
-        end
-    end
-
-    out = try
-        redirect_stdout(pipe.in) do
-            try
-                f()
-            finally
-                # flush while fd 1 is still the pipe, libc buffers when stdout isn't a tty
-                Base.Libc.flush_cstdio()
-            end
-        end
-    finally
-        close(pipe.in)
-    end
-    wait(reader)
-    close(pipe)
-    return out, String(take!(buf))
-end
-
 struct IpoptTiming
     cpu::Dict{String,Float64}
     wall::Dict{String,Float64}
@@ -44,7 +8,7 @@ struct IpoptTiming
 end
 
 # "  LinearSystemFactorization....:  1093.560 (sys:  19.282 wall:  332.830)"
-# the (sys: … wall: …) group is required, it keeps the convergence block out
+# (sys: … wall: …) group required, keeps convergence block out
 const _ROW = r"^(\s*)(\S.*?)\.*:\s*([-\d.eE+]+)\s*\(sys:\s*[-\d.eE+]+\s+wall:\s*([-\d.eE+]+)\)"
 const _CNT = r"^Number of (.+?) evaluations\s*=\s*(\d+)"
 const _IT = r"^Number of Iterations\.*:\s*(\d+)"

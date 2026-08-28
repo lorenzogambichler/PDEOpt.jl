@@ -55,21 +55,18 @@ function build_ocp(ocp::MethanationOCP, x0::Vector{Float64};
     exact_hessian || return ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
         gradient_backend=gb, hessian_backend=ZeroHessian)
 
-    # methanation_hessian.jl only works with 1st order upwind
-    isnothing(ocp.ad) ||
-        error("exact_hessian=true is only valid with recon=:upwind1; the kernel Hessian " *
-              "still uses the 2-cell FaceHess stencil. Use exact_hessian=false.")
+    isnothing(ocp.ad) || error("exact_hessian=true only valid with recon=:upwind1")
 
-    # Jacobian from ADNLPModels (precomputed pattern -> no tracer)
-    # Hessian from local kernel assembly in methanation_hessian.jl
+    # Jac from ADNLPModels (precomputed pattern -> no tracer)
+    # Hess from local kernel assembly (analytic_hessian.jl)
     patJ = jac_pattern(ocp, z0; cache=sparsity_cache)
     nv, nc_ = nvars(ocp), ncons(ocp)
     tj = @elapsed jb = ADNLPModels.SparseADJacobian(nv, f, nc_, c!, patJ; x0=z0, show_time)
-    show_time && println("  • Jacobian backend: $(round(tj, digits=1)) s, $(nnz(patJ)) nnz.")
+    show_time && println("  -> Jacobian backend: $(round(tj, digits=1)) s, $(nnz(patJ)) nnz.")
     inner = ADNLPModel!(f, z0, lvar, uvar, c!, lcon, ucon;
         gradient_backend=gb, jacobian_backend=jb, hessian_backend=ZeroHessian)
     th = @elapsed H = OCPHessian(ocp)
-    show_time && println("  • Hessian structure: $(round(th, digits=1)) s, $(nnzh(H)) nnz.")
+    show_time && println("  -> Hessian structure: $(round(th, digits=1)) s, $(nnzh(H)) nnz.")
     return KernelHessNLP(inner, H)
 end
 
@@ -93,15 +90,16 @@ end
 
 function solve_ocp(ocp::MethanationOCP, x0::Vector{Float64}; linear_solver::String="ma97",
     exact_hessian::Bool=false, sparsity_cache::String="", show_time::Bool=false, kwargs...)
+    
     nlp = build_ocp(ocp, x0; exact_hessian, sparsity_cache, show_time)
-    show_time && println("  • recon = :$(recon(ocp)), jac nnz = $(nlp.meta.nnzj) ",
-        "($(round(nlp.meta.nnzj / ncons(ocp); digits=1)) per row).")
+    
     hess_opts = exact_hessian ? (;) : (hessian_approximation="limited-memory",)
     stats = ipopt(nlp; hess_opts..., mu_strategy="adaptive",
         acceptable_tol=1e-4, acceptable_iter=3,
         bound_relax_factor=0.0, bound_push=1e-6, bound_frac=1e-6,
         print_timing_statistics="yes",
         hsl_options(linear_solver)..., kwargs...)
+    
     Z, u = unscale_z(ocp, stats.solution)
     return (Z=Z, u=u, stats=stats)
 end
