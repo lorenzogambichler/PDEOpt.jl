@@ -6,8 +6,10 @@ README.md
 TODO.md
 
 # Solver output
-apps/forward_solvers/results/
-apps/optimal_control/results/
+apps/methanation/results/
+apps/methanation/figures/
+apps/plug_flow/results/
+apps/plug_flow/figures/
 *.vtu
 *.pvd
 *.vtr

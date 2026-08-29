@@ -1,6 +1,6 @@
 using LinearAlgebra, SparseArrays, PDEOpt, Random, Printf, Plots
 
-include("../../apps/optimal_control/MethanationOpt.jl")
+include("../../apps/methanation/opt.jl")
 
 # Bisection to find largest constant Tw s.t. max(Tguess) < Tmax - δ
 # lo always feasible by construction
@@ -9,7 +9,7 @@ function bisect_const(tf, ts, Δt, Ne; Tmax, Δt_cn=0.25, Tw_min=300.0, Tw_max=6
 
     Ttgt = Tmax - δ
     function run(Tw)
-        cache = cn_forward(t -> Tw, tf, Δt_cn; recon=recon)
+        cache, _ = cn_forward(t -> Tw, tf, Δt_cn; recon=recon)
         Z = resample(cache.y, Δt_cn, ts)
         return Z, maximum(view(Z, fielddof(cache.prob.dm, :T), :))
     end

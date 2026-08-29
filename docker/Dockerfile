@@ -36,4 +36,4 @@ RUN julia -e 'using HSL_jll; @assert isfile(HSL_jll.libhsl_path) HSL_jll.libhsl_
 ENV JULIA_DEPOT_PATH=/tmp/julia-depot:/opt/julia
 
 ENTRYPOINT ["julia", "--project=/app"]
-CMD ["apps/optimal_control/MethanationOpt.jl"]
+CMD ["apps/methanation/opt.jl"]

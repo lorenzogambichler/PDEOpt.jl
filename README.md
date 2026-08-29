@@ -58,7 +58,7 @@ julia --project -e 'using Pkg; Pkg.instantiate()'
 Run the methanation optimal control problem:
 
 ```bash
-julia --project apps/optimal_control/MethanationOpt.jl
+julia --project apps/methanation/opt.jl
 ```
 
 ### Docker
@@ -74,8 +74,8 @@ docker build -f docker/Dockerfile -t pdeopt:0.1 \
 
 ```bash
 docker/run.sh # methanation OCP
-docker/run.sh apps/forward_solvers/Methanation.jl # other driver
-DETACH=1 NAME=meth-01 docker/run.sh # long run
+docker/run.sh apps/... # other driver
+DETACH=1 NAME=meth-01 docker/run.sh # for SSH
 ```
 
 ## Layout
@@ -92,7 +92,7 @@ DETACH=1 NAME=meth-01 docker/run.sh # long run
 | [`src/optimization/`](src/optimization/) | NLP transcription, scaling, initial guesses |
 | [`src/io/`](src/io/) | VTK/CSV writers, `.vtr`/`.pvd` reader for post-processing |
 | [`src/diagnostics/`](src/diagnostics/) | Memory sampling, IPOPT log |
-| [`apps/`](apps/) | Driver scripts -> forward simulation, optimal control, figures |
+| [`apps/methanation/`](apps/) | Driver scripts |
 
 ## References
 

@@ -1,6 +1,6 @@
 using LinearAlgebra, SparseArrays, PDEOpt, Random, Printf, Plots
 
-include("../../apps/optimal_control/MethanationOpt.jl")
+include("../../apps/methanation/opt.jl")
 
 # Original feedback law guess
 # 1) P law on peak T -> continuous Tw(t), 2) average onto elements, re-simulate
@@ -34,7 +34,7 @@ function feedback_guess(tf, ts, Δt, Ne; Tmax, Δt_cn=0.25, Tw_min=300.0, Tw_max
     end
 
     uf(t) = u[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
-    cache = cn_forward(uf, tf, Δt_cn; recon=recon)
+    cache, _ = cn_forward(uf, tf, Δt_cn; recon=recon)
     Z = resample(cache.y, Δt_cn, ts)
     Tpk = maximum(view(Z, fielddof(cache.prob.dm, :T), :))
     conv = Tpk <= Tmax - δ

@@ -8,7 +8,7 @@ using OrdinaryDiffEq
 using OrdinaryDiffEqSDIRK
 
 using PDEOpt
-include("../../apps/forward_solvers/PlugFlow.jl") # ProblemCache, setup_problem, set_ic!, write_vtk (assembly now in PDEOpt)
+include("../../apps/plug_flow/problem.jl") # setup_problem (assembly in PDEOpt)
 
 pushdisplay(TextDisplay(devnull))
 

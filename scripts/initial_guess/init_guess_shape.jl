@@ -1,6 +1,6 @@
 using LinearAlgebra, SparseArrays, PDEOpt, Random, Printf, Plots
 
-include("../../apps/optimal_control/MethanationOpt.jl")
+include("../../apps/methanation/opt.jl")
 
 # Dynamic initial guess
 # Fix shape s(τ) ∈ [0,1] and bisect λ, u(t; λ) = λ + (Tw_max - λ) * s(t/tf)
@@ -26,7 +26,7 @@ function bisect_shape(tf, ts, Δt, Ne; Tmax, Δt_cn=0.25, Tw_min=300.0, Tw_max=6
     function run(λ)
         u = @. λ + (Tw_max - λ) * sh
         uf(t) = u[clamp(floor(Int, t / Δt) + 1, 1, Ne)]
-        cache = cn_forward(uf, tf, Δt_cn; recon=recon)
+        cache, _ = cn_forward(uf, tf, Δt_cn; recon=recon)
         Z = resample(cache.y, Δt_cn, ts)
         return Z, u, maximum(view(Z, fielddof(cache.prob.dm, :T), :))
     end

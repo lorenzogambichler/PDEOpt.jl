@@ -1,12 +1,12 @@
-# Figures for MethanationOpt.jl
+# Figures for opt.jl
 
 using PDEOpt
 using CairoMakie
 using Printf
 
 const APPDIR = @__DIR__
-const RESULTS = joinpath(APPDIR, "results", "Methanation")
-const FIGDIR = joinpath(RESULTS, "figures")
+const RESULTS = joinpath(APPDIR, "results", "opt")
+const FIGDIR = joinpath(APPDIR, "figures")
 
 const TMAX = 750.0
 const TW_MAX = 650.0

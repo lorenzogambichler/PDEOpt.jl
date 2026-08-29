@@ -236,5 +236,5 @@ function main()
 
     # Solve and write 
     cn_solve!(intg_cache, y -> react!(prob, y), (b, t) -> (@. b = prob.τ(t) * prob.f_in), newton!) # or quasi_newton!
-    write_vtk("apps/forward_solvers/results/ADR_DG/ADR_DG", intg_cache)
+    write_vtk(joinpath(@__DIR__, "results", "ADR_DG", "ADR_DG"), intg_cache)
 end
