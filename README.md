@@ -92,7 +92,7 @@ DETACH=1 NAME=meth-01 docker/run.sh # for SSH
 | [`src/optimization/`](src/optimization/) | NLP transcription, scaling, initial guesses |
 | [`src/io/`](src/io/) | VTK/CSV writers, `.vtr`/`.pvd` reader for post-processing |
 | [`src/diagnostics/`](src/diagnostics/) | Memory sampling, IPOPT log |
-| [`apps/methanation/`](apps/) | Driver scripts |
+| [`apps/`](apps/) | Driver scripts |
 
 ## References
 
