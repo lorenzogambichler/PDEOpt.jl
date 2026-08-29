@@ -1,4 +1,4 @@
-using LinearAlgebra, SparseArrays, PDEOpt, Random, Printf, Plots
+using LinearAlgebra, SparseArrays, PDEOpt, Random, Printf, CairoMakie
 
 include("../../apps/methanation/opt.jl")
 
@@ -102,13 +102,17 @@ function plot_guess(res)
     te = (0:ocp.Ne) .* ocp.Δt # element edges
     ts = timegrid(ocp)
 
-    p1 = plot(te, vcat(res.u, res.u[end]); seriestype=:steppost, lw=2, legend=false,
-        xlabel="t [s]", ylabel="Tw [K]", title="control")
-    hline!(p1, [ocp.Tw_max]; ls=:dash, lw=1, c=:gray)
-    p2 = plot(ts, outlet_conv(ocp, res.Z); lw=2, legend=false, ylims=(0, 1),
-        xlabel="t [s]", ylabel="X_CO2 [-]", title="conversion")
-    return plot(p1, p2; layout=(1, 2), size=(900, 360),
-        left_margin=6Plots.mm, bottom_margin=6Plots.mm)
+    fig = Figure(size=(900, 360))
+
+    ax1 = Axis(fig[1, 1]; xlabel="t [s]", ylabel="Tw [K]", title="control")
+    stairs!(ax1, te, vcat(res.u, res.u[end]); step=:post, linewidth=2)
+    hlines!(ax1, [ocp.Tw_max]; linestyle=:dash, linewidth=1, color=:gray)
+
+    ax2 = Axis(fig[1, 2]; xlabel="t [s]", ylabel="X_CO2 [-]", title="conversion")
+    lines!(ax2, ts, outlet_conv(ocp, res.Z); linewidth=2)
+    ylims!(ax2, 0, 1)
+
+    return fig
 end
 
 res = check_guess(recon=:vanalbada);
