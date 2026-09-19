@@ -65,7 +65,7 @@ export newton!, chord!, shamanskii
 # ODE solvers
 export cn_solve!, CNCache, set_ic!, resample
 
-# Collocation tableaux
+# Collocation tableaus
 export RadauIIA, nstages, stage_time, quadrature_weights
 
 # Dense output

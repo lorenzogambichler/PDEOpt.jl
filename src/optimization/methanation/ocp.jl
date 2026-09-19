@@ -1,4 +1,4 @@
-struct MethanationOCP{TSA,TTab,TAD}
+struct MethanationOCP{TSA,TTab,TAD} <: AbstractOCP
     # Collocation
     sa::TSA
     tab::TTab # tableau

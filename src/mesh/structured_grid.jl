@@ -16,7 +16,7 @@ export AbstractGrid, AbstractGeometry,
 # Node grading
 export graded_nodes
 
-# Dispatch assembly on concrete types -> extendable to 1D grids
+# Dispatch assembly on concrete types -> 1D/2D grids
 abstract type AbstractGrid end
 abstract type AbstractGeometry end
 
@@ -309,7 +309,7 @@ function BoundaryFaceGeometry(g::StructGrid1D, geom::Geometry1D, bf::BoundaryFac
     return BoundaryFaceGeometry(area, dist)
 end
 
-# DOF map (multi-field)
+# DOF map
 export DofMap, ndof, fieldindex, dof, celldof, fielddof
 
 # Cell interleaved, e.g. (C1, T1, C2, T2, ...)

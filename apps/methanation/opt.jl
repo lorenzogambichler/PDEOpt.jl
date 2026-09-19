@@ -17,14 +17,14 @@ function forward_guess(tf, ts, Δt, Ne; Δt_cn=0.25, Tmax=750.0, Tw_min=300.0, T
     function forward(u)
         uvec = u isa Real ? fill(float(u), Ne) : u # vector (bisect_shape), scalar (bisect_const)
         cache, _ = cn_forward(zoh(uvec, Δt), tf, Δt_cn; recon=recon)
-        Z = resample(cache.y, Δt_cn, ts)
-        return Z, maximum(view(Z, fielddof(cache.prob.dm, :T), :))
+        Y = resample(cache.y, Δt_cn, ts)
+        return Y, maximum(view(Y, fielddof(cache.prob.dm, :T), :))
     end
 
     #g = bisect_shape(forward, Ne; Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, δ=δ)
     g = bisect_const(forward, Ne; Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, δ=δ)
     g.conv || @warn "initial guess bisection did not converge" g.Tpk g.Tw
-    return g.Z, g.u
+    return g.Y, g.u
 end
 
 # solve_ocp with memory sampler, needs julia -t 2 (main, sampler)
@@ -67,14 +67,14 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false, solver::Symbol=:I
         Tmax=Tmax, γ=γ, co2_in=co2_in, recon=recon)
 
     # Initial guesses
-    Zguess, uguess = forward_guess(tf, timegrid(ocp), Δt, Ne;
+    Yguess, uguess = forward_guess(tf, timegrid(ocp), Δt, Ne;
         Tmax=Tmax, Tw_min=Tw_min, Tw_max=Tw_max, recon=recon)
-    x0 = vcat(vec(Zguess), uguess)
+    x0 = vcat(vec(Yguess), uguess)
 
     Td = fielddof(prob.dm, :T)
-    Tg, idx = findmax(view(Zguess, Td, :))
+    Tg, idx = findmax(view(Yguess, Td, :))
     zhot = prob.geom.zc[cellij(prob.grid, idx[1])[1]]
-    spmin = minimum(view(Zguess, setdiff(1:ndof(prob.dm), Td), :))
+    spmin = minimum(view(Yguess, setdiff(1:ndof(prob.dm), Td), :))
     println("recon = :", recon)
     println("init guess: T_max = ", round(Tg; digits=1), " K, z_max = ",
         round(zhot; digits=3), " m, ρ_min = ", round(spmin; sigdigits=3))
@@ -91,7 +91,7 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false, solver::Symbol=:I
         opts = ()
         res = profile ? (@warn "profiling not implemented for MadNLP, running standard solve" profile) : 
             solve_ocp(ocp, x0, opts...) # TODO solver argument
-        @error "MadNLP is currently not implemented, use solver=:IPOPT" solver
+        error("MadNLP is currently not implemented, use solver=:IPOPT")
     else 
         @warn "$(solver) is not implemented, defaulting to IPOPT" solver
         opts = (print_level=5, max_iter=200, tol=1e-5, exact_hessian=false,
@@ -101,11 +101,13 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false, solver::Symbol=:I
     end
 
     # Print res
-    Xguess = outlet_conv(ocp, Zguess)
+    Xguess = outlet_conv(ocp, Yguess)
     Xopt = outlet_conv(ocp, res.Z)
     println("status: ", res.stats.status)
-    println("X_CO2_final: guess -> ", round(Xguess[end]; digits=4), ", opt -> ", round(Xopt[end]; digits=4))
-    println("X_CO2_mean:  guess -> ", round(mean_conv(ocp, Zguess); digits=4), ", opt -> ", round(mean_conv(ocp, res.Z); digits=4))
+    println("X_CO2_final: guess -> ", round(Xguess[end]; digits=4), 
+        ", opt -> ", round(Xopt[end]; digits=4))
+    println("X_CO2_mean:  guess -> ", round(mean_conv(ocp, Yguess); 
+        digits=4), ", opt -> ", round(mean_conv(ocp, res.Z); digits=4))
 
     # Re-sim with CN
     res_cn_coarse, sa_cn_coarse = cn_forward(zoh(res.u, Δt), tf, Δt_resim; recon=recon)
@@ -116,9 +118,10 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false, solver::Symbol=:I
     # Transcription check (Δt -> Δt_resim)
     Td_cc = fielddof(res_cn_coarse.prob.dm, :T)
     Tpk_cc = maximum(view(res_cn_coarse.y, Td_cc, :))
-    Xbar_cc = mean_conv(ocp, outlet_conv(sa_cn_coarse,
+    Xbar_cc = mean_conv(ocp, outlet_conv(sa_cn_coarse, 
         resample(res_cn_coarse.y, Δt_resim, timegrid(ocp))))
-    println("re-sim on coarse grid (", res_cn_coarse.prob.grid.nz, " by ", res_cn_coarse.prob.grid.nr, ", Δt_cn = ", Δt_resim, "):")
+    println("re-sim on coarse grid (", res_cn_coarse.prob.grid.nz, " by ", 
+        res_cn_coarse.prob.grid.nr, ", Δt_cn = ", Δt_resim, "):")
     println("  T_max = ", round(Tpk_cc; digits=2))
     println("  X_CO2_mean = ", round(Xbar_cc; digits=4))
 
@@ -126,16 +129,20 @@ function main(; recon::Symbol=:vanalbada, profile::Bool=false, solver::Symbol=:I
     Td_cn = fielddof(res_cn.prob.dm, :T)
     Tpk_cn = maximum(view(res_cn.y, Td_cn, :))
     Xbar_cn = mean_conv(ocp, outlet_conv(sa_cn, resample(res_cn.y, Δt_resim, timegrid(ocp))))
-    println("re-sim on fine grid (", res_cn.prob.grid.nz, " by ", res_cn.prob.grid.nr, ", Δt_cn = ", Δt_resim, "):")
+    println("re-sim on fine grid (", res_cn.prob.grid.nz, " by ", 
+        res_cn.prob.grid.nr, ", Δt_cn = ", Δt_resim, "):")
     println("  T_max = ", round(Tpk_cn; digits=2))
     println("  X_CO2_mean = ", round(Xbar_cn; digits=4))
 
     # Save res
     ts_plot = collect(0.0:Δt_plot:tf)
-    write_vtk(joinpath(resultsdir, "opt_coarse_state"), res_cn_coarse.prob, dense_output(res_cn_coarse, ts_plot), ts_plot)
-    write_vtk(joinpath(resultsdir, "guess_coarse_state"), guess_cn_coarse.prob, dense_output(guess_cn_coarse, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "opt_coarse_state"), res_cn_coarse.prob, 
+        dense_output(res_cn_coarse, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "guess_coarse_state"), guess_cn_coarse.prob, 
+        dense_output(guess_cn_coarse, ts_plot), ts_plot)
     write_vtk(joinpath(resultsdir, "opt_fine_state"), res_cn.prob, dense_output(res_cn, ts_plot), ts_plot)
-    write_vtk(joinpath(resultsdir, "guess_fine_state"), guess_cn.prob, dense_output(guess_cn, ts_plot), ts_plot)
+    write_vtk(joinpath(resultsdir, "guess_fine_state"), guess_cn.prob, 
+        dense_output(guess_cn, ts_plot), ts_plot)
     write_control(joinpath(resultsdir, "opt_control.csv"), res.u, Δt, Ne)
     write_control(joinpath(resultsdir, "guess_control.csv"), uguess, Δt, Ne)
 end

@@ -1,19 +1,19 @@
 module Collocation
 
-# Radau IIA (OCFE)
+abstract type AbstractCollocationMethod end
 
 using LinearAlgebra
 import ..dense_output
 
 export RadauIIA, nstages, stage_time, quadrature_weights
 
-struct RadauIIA
+struct RadauIIA <: AbstractCollocationMethod
     s::Int
     c::Vector{Float64} # Abscissae
     A::Matrix{Float64} # Butcher matrix
     b::Vector{Float64} # A[s,:]
     D::Matrix{Float64} # inv(A)
-    d0::Vector{Float64} # ∑_j d_ij - d0_i = 0
+    d0::Vector{Float64} # ∑_j d_ij - d0_i = 0 (d0_i is sum of i-th row of D)
 end
 
 function radau_points(s::Int)
