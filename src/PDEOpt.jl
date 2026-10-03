@@ -14,6 +14,7 @@ include("timestepping/crank_nicolson.jl")
 include("timestepping/collocation.jl")
 include("io/output.jl")
 include("io/vtkread.jl")
+include("optimization/optimization.jl")
 
 using .Diagnostics
 using .StructuredMesh
@@ -27,6 +28,7 @@ using .CrankNicolson
 using .Collocation
 using .Output
 using .VTKRead
+using .Optimization
 
 # FEM assembly
 export assemble_mass!, assemble_diffusion!, assemble_interface!, assemble_advection!,
@@ -40,7 +42,7 @@ export advection_flux, diffusion_flux,
     face_flux, bnd_energy_kernel,
     vanalbada, antidiff_eps, AntiDiffusion, assemble_antidiffusion!
 
-# Tensor grid connectivity, geometry, DOF map, sparsitiy pattern
+# Grid connectivity, geometry, DOF map, sparsitiy pattern
 export AbstractGrid, AbstractGeometry,
     StructGrid2D, StructGrid1D, ncells, cellindex, cellij,
     FaceSet, interior_faces, BoundaryFaceSet, boundary_faces,
@@ -76,6 +78,22 @@ export write_vtk, write_control
 
 # Reading results back
 export VTRFile, VTRSeries, read_vtr, read_pvd, read_series, cellcentres
+
+# Optimization (collocation transcription + OCPs)
+export AbstractOCP,
+    CollocationLayout, ncols, elsize, nvars, ncons,
+    initial_range, stage_range, control_range, cons_range, left_range,
+    initial, stage, control, left, stagecol, element_times, stage_times,
+    pack, pack!, unpack,
+    Scaling, scale_x, scale_x!, unscale_x, unscale_x!, scale_bounds,
+    Bounds, assemble_bound_vecs,
+    CollocationResidual, retype,
+    Objective,
+    MethanationOCP, MethanationDynamics, MethanationCost,
+    methanation_layout, methanation_scaling, methanation_bounds,
+    methanation_residual, methanation_objective,
+    ZeroHessian, ObjectiveGradient, hsl_options, build_nlp, solve_ocp,
+    inflow, co2_inflow, outlet_conv, mean_conv
 
 # Profiling
 export MemTrace, memtrace,
