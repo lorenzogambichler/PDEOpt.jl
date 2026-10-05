@@ -4,8 +4,11 @@ apps/methanation/results/
 apps/methanation/figures/
 apps/plug_flow/results/
 apps/plug_flow/figures/
+src/optimization/OLD_methanation
+src/optimization/OLD_plug_flow
 tmp/
 notes/
+scripts/
 *.vtu
 *.pvd
 *.vtr

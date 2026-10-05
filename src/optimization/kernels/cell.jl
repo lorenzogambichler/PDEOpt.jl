@@ -1,3 +1,0 @@
-abstract type CellKernelSet end
-
-

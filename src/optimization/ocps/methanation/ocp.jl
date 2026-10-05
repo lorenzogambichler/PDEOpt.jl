@@ -8,7 +8,7 @@ struct MethanationOCP{TCL, TO, TR, TB, TS} <: AbstractOCP
 end
 
 function MethanationOCP(sa, y0; Ne, Δt, s=3, Tmin, Tmax, Tw_max, Tw_min, γ=0.01, 
-    recon=:vanalbada, ad_rel=1e-8)
+    recon=:vanalbada, ad_rel=1e-3)
     lay = methanation_layout(sa.prob, Ne, Δt, s)
     scl = methanation_scaling(sa.prob, y0; Tmin, Tmax, Tw_min, Tw_max)
     bnd = methanation_bounds(sa.prob, y0; Tmin, Tmax, Tw_min, Tw_max)

@@ -6,6 +6,7 @@ using Serialization
 using ADNLPModels
 using NLPModelsIpopt
 using HSL_jll
+using Printf
 using ..Models
 using ..Problem
 using ..StructuredMesh
@@ -15,8 +16,10 @@ using ..Collocation: AbstractCollocationMethod # not exported
 
 abstract type AbstractOCP end
 
+# General structure
 include("nlp/nlp.jl")
 
+# Problem-specific constructions
 include("ocps/methanation/methanation.jl")
 #include("ocps/plug_flow/plug_flow.jl")
 
@@ -38,5 +41,7 @@ export AbstractOCP,
     methanation_layout, methanation_scaling, methanation_bounds,
     methanation_residual, methanation_objective,
     ZeroHessian, ObjectiveGradient, hsl_options, build_nlp, solve_ocp,
-    inflow, co2_inflow, outlet_conv, mean_conv
+    inflow, co2_inflow, outlet_conv, mean_conv, twshape, bisect_shape, bisect_const
+    # Plug flow
+    # TODO
 end

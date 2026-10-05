@@ -7,7 +7,7 @@ inflow(sa::StateAssembly, spec::Symbol, t::Real=0.0) =
 co2_inflow(sa, t::Real=0.0) = inflow(sa, :CO2, t)
 
 # X_i(t) = 1 − ṅ_i,out(t)/ṅ_i,in (outlet)
-# Y on any grid as long as sa same
+# Y any grid as long as sa same
 function outlet_conv(sa::StateAssembly, Y::AbstractMatrix, spec::Symbol=:CO2)
     bfs_out, bfg_out = sa.ebnd[2]
     dofs = [dof(sa.prob.dm, c, spec) for c in bfs_out.cells]
@@ -17,7 +17,7 @@ function outlet_conv(sa::StateAssembly, Y::AbstractMatrix, spec::Symbol=:CO2)
 end
 
 # mean outlet X_i over [0,tf] (Radau quad)
-# X must be on stage columns (stage_times(lay)) but can be resampled from any grid
+# X on stage columns (stage_times(lay)), can be resampled
 function mean_conv(lay::CollocationLayout, X::AbstractVector)
     length(X) == ncols(lay) || error("X has $(length(X)) cols, expected $(ncols(lay))")
     Xbar = 0.0

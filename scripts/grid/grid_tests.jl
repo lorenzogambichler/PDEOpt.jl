@@ -4,7 +4,6 @@ using PDEOpt
 grid = StructuredGrid(1.0, 1.0, 10, 10)
 geom = Geometry(grid)
 
-# 
 nc = ncells(grid)
 dm = DofMap(nc, :C, :T)
 

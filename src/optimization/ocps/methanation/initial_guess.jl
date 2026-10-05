@@ -18,24 +18,24 @@ function bisect_shape(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
 
     function run(λ)
         u = @. λ + (Tw_max - λ) * sh
-        Z, pk = forward(u)
-        return Z, u, pk
+        Y, pk = forward(u)
+        return Y, u, pk
     end
 
-    Zh, uh, Th = run(Tw_max)
+    Yh, uh, Th = run(Tw_max)
     if Th <= Ttgt
         verbose && @printf("  Tw_max already feasible (max T %.2f K)\n", Th)
-        return (Z=Zh, u=uh, Tpk=Th, Tw=Tw_max, it=1, conv=true)
+        return (Y=Yh, u=uh, Tpk=Th, Tw=Tw_max, it=1, conv=true)
     end
     # lo not automatically feasible, where s = 1 the profile sits at Tw_max whatever λ is
-    Zl, ul, Tl = run(Tw_min)
+    Yl, ul, Tl = run(Tw_min)
     if Tl > Ttgt
         verbose && @printf("  λ=Tw_min still breaches (max T %.2f K) -> shorten a or raise d\n", Tl)
-        return (Z=Zl, u=ul, Tpk=Tl, Tw=Tw_min, it=2, conv=false)
+        return (Y=Yl, u=ul, Tpk=Tl, Tw=Tw_min, it=2, conv=false)
     end
 
     lo, hi, it = Tw_min, Tw_max, 2
-    best = (Zl, ul, Tw_min, Tl)
+    best = (Yl, ul, Tw_min, Tl)
     while hi - lo > tol && it < itmax
         mid = 0.5 * (lo + hi)
         Zm, um, Tm = run(mid)
@@ -44,8 +44,8 @@ function bisect_shape(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
             it, mid, Tm, Tm <= Ttgt ? "feasible" : "over")
         Tm <= Ttgt ? (lo = mid; best = (Zm, um, mid, Tm)) : (hi = mid)
     end
-    Z, u, λ, Tpk = best
-    return (Z=Z, u=u, Tpk=Tpk, Tw=λ, it=it, conv=true)
+    Y, u, λ, Tpk = best
+    return (Y=Y, u=u, Tpk=Tpk, Tw=λ, it=it, conv=true)
 end
 
 # Bisection to find largest constant Tw s.t. max(Tguess) < Tmax - δ
@@ -54,15 +54,15 @@ function bisect_const(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
     δ=7.0, itmax=20, tol=0.05, verbose::Bool=true)
     Ttgt = Tmax - δ # δ absorbs error (CN, interpolation, etc.) 
 
-    Zh, Th = forward(Tw_max)
+    Yh, Th = forward(Tw_max)
     if Th <= Ttgt
         verbose && @printf("  Tw_max already feasible (max T %.2f K)\n", Th)
-        return (Z=Zh, u=fill(Tw_max, Ne), Tpk=Th, Tw=Tw_max, it=1, conv=true)
+        return (Y=Yh, u=fill(Tw_max, Ne), Tpk=Th, Tw=Tw_max, it=1, conv=true)
     end
-    Zl, Tl = forward(Tw_min)
+    Yl, Tl = forward(Tw_min)
     if Tl > Ttgt
         @warn "even Tw_min breaches the cap -- infeasible for this reactor" Tl Ttgt
-        return (Z=Zl, u=fill(Tw_min, Ne), Tpk=Tl, Tw=Tw_min, it=2, conv=false)
+        return (Y=Yl, u=fill(Tw_min, Ne), Tpk=Tl, Tw=Tw_min, it=2, conv=false)
     end
 
     lo, hi, it = Tw_min, Tw_max, 2
@@ -75,6 +75,6 @@ function bisect_const(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
             it, mid, Tm, Tm <= Ttgt ? "feasible" : "over")
         Tm <= Ttgt ? (lo = mid; best = (Zm, mid, Tm)) : (hi = mid)
     end
-    Z, Tw, Tpk = best
-    return (Z=Z, u=fill(Tw, Ne), Tpk=Tpk, Tw=Tw, it=it, conv=true)
+    Y, Tw, Tpk = best
+    return (Y=Y, u=fill(Tw, Ne), Tpk=Tpk, Tw=Tw, it=it, conv=true)
 end

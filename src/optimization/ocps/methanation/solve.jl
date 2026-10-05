@@ -43,9 +43,10 @@ function build_nlp(ocp::MethanationOCP, x0::AbstractVector; hessian::Symbol=:lbf
         gradient_backend=ObjectiveGradient(ocp.obj), hessian_backend=ZeroHessian)
 end
 
-function solve_ocp(ocp::MethanationOCP, x0::AbstractVector; linear_solver::String="ma97", kwargs...)
-    nlp = build_nlp(ocp, x0)
-    # kwargs override defaults (merge, later keys win)
+function solve_ocp(ocp::MethanationOCP, x0::AbstractVector; linear_solver::String="ma97", 
+    hessian::Symbol=:lbfgs, kwargs...)
+    nlp = build_nlp(ocp, x0; hessian=hessian)
+    # kwargs override
     opts = merge((hessian_approximation="limited-memory",
             mu_strategy="adaptive", acceptable_tol=1e-4, acceptable_iter=3,
             bound_relax_factor=0.0, bound_push=1e-6, bound_frac=1e-6,

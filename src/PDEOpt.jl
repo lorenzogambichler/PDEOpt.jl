@@ -81,6 +81,7 @@ export VTRFile, VTRSeries, read_vtr, read_pvd, read_series, cellcentres
 
 # Optimization (collocation transcription + OCPs)
 export AbstractOCP,
+    # OCP
     CollocationLayout, ncols, elsize, nvars, ncons,
     initial_range, stage_range, control_range, cons_range, left_range,
     initial, stage, control, left, stagecol, element_times, stage_times,
@@ -89,11 +90,14 @@ export AbstractOCP,
     Bounds, assemble_bound_vecs,
     CollocationResidual, retype,
     Objective,
+    # Methanation
     MethanationOCP, MethanationDynamics, MethanationCost,
     methanation_layout, methanation_scaling, methanation_bounds,
     methanation_residual, methanation_objective,
     ZeroHessian, ObjectiveGradient, hsl_options, build_nlp, solve_ocp,
-    inflow, co2_inflow, outlet_conv, mean_conv
+    inflow, co2_inflow, outlet_conv, mean_conv, twshape, bisect_const, bisect_shape
+    # Plug flow
+    # TODO
 
 # Profiling
 export MemTrace, memtrace,
