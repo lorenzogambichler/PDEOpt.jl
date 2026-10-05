@@ -1,12 +1,10 @@
 # Element-level exact Hessian of the Lagrangian for MethanationOCP
 # ∇²L = σ∇²f + Σ_r λ_r ∇²c_r
-# Assemble from local blocks instead of global AD sweep and use ForwardDiff on blocks
 
 # global variable index of Z[d, col]
 @inline gidx(ocp::MethanationOCP, d::Int, col::Int) = (col - 1) * ocp.n + d
 
 # Cell kernel
-# v = [Z[cd[1..nf], stage i] ; Z[dT, stage 1..s] ; Z[dT, leftcol]]
 mutable struct CellHess{TM}
     m::TM
     nf::Int
@@ -16,7 +14,7 @@ mutable struct CellHess{TM}
     vol::Float64
     y_off::Vector{Float64} # nf, cell offsets
     sy::Vector{Float64} # nf, cell scales
-    ν::Vector{Float64} # nf, λ_R·sc for this (stage, cell)
+    ν::Vector{Float64} # nf, λ_R*sc for stage, cell
     D::Vector{Float64} # s, tableau row i
     d0i::Float64
     syT::Float64
@@ -26,6 +24,7 @@ mutable struct CellHess{TM}
     mdT::Float64
 end
 
+# v = [Z[cd[1..nf], stage i] ; Z[dT, stage 1..s] ; Z[dT, leftcol]]
 function (K::CellHess)(v)
     m, nf, s = K.m, K.nf, K.s
     y_off, sy, ν = K.y_off, K.sy, K.ν
@@ -251,7 +250,7 @@ function hess_values!(vals::Vector{Float64}, H::OCPHessian, z::Vector{Float64},
     fill!(vals, 0.0)
     t = 0
 
-    for k in 1:Ne, i in 1:s
+    for k = 1:Ne, i = 1:s
         rowbase = ((k - 1) * s + i - 1) * n
         @views @. ν = λ[rowbase+1:rowbase+n] * sc
         ti = stage_time(tab, k, i, Δt)
@@ -263,7 +262,7 @@ function hess_values!(vals::Vector{Float64}, H::OCPHessian, z::Vector{Float64},
         ci = stagecol(ocp, k, i)
 
         # cell blocks
-        for c in 1:H.ncell
+        for c = 1:H.ncell
             cd = celldof(dm, c)
             cix, cjx = cellij(grid, c)
             ck.vol = cellvolume(geom, cix, cjx)
@@ -281,7 +280,7 @@ function hess_values!(vals::Vector{Float64}, H::OCPHessian, z::Vector{Float64},
             ForwardDiff.hessian!(H.Hc, ck, H.vc, H.cfgc)
             # slots nf and nf+i alias one global variable -> pair lands on diag
             # full double sum needs (a,b) and (b,a)
-            @inbounds for b in 1:nlc, a in b:nlc
+            @inbounds for b = 1:nlc, a = b:nlc
                 mult = (a != b && gv[a] == gv[b]) ? 2.0 : 1.0
                 vals[H.pos[t+=1]] += mult * H.Hc[a, b]
             end

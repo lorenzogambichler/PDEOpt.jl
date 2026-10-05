@@ -1,0 +1,6 @@
+include("objective.jl")
+include("dynamics.jl")
+include("ocp.jl")
+include("solve.jl")
+include("postprocess.jl")
+include("initial_guess.jl")
