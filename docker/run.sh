@@ -32,7 +32,7 @@ else
   args+=(--rm)
 fi
 
-docker run "${args[@]}" "$IMAGE" "$SCRIPT" "${@:2}"
+docker run "${args[@]}" "$IMAGE" "--project=/app/$(dirname "$SCRIPT")" "$SCRIPT" "${@:2}"
 
 if [[ -n ${DETACH:-} ]]; then
   echo

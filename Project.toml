@@ -5,35 +5,24 @@ authors = ["Lorenzo Gambichler <l.gambichler@gmail.com>"]
 
 [deps]
 ADNLPModels = "54578032-b7ea-4c30-94aa-7cbd1cce6c9a"
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
-ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-HSL = "34c5aeac-e683-54a6-a0e9-6e0fdc586c50"
 HSL_jll = "017b0a0e-03f4-516a-9b91-836bbd1904dd"
-Ipopt = "b6b21f68-93f8-5de0-b562-5493be1d77c9"
-JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
 LightXML = "9c8b4983-aa76-5018-a973-4c85ecc9e179"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 NLPModelsIpopt = "f4238b75-b362-5c4c-b852-0801c9a21d71"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
-ProtoStructs = "437b6fc4-8e8e-11e9-3fa1-ad391e66c018"
-Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [compat]
+julia = "1.12"
 ADNLPModels = "0.8.13"
-CairoMakie = "0.15.12"
 CodecZlib = "0.7.8"
-ForwardDiff = "1.4.1"
-HSL = "0.5.5"
-Ipopt = "1.15.0"
-JuMP = "1.30.1"
 LightXML = "0.9.3"
 NLPModelsIpopt = "0.11.3"
 Printf = "1.11.0"
-Revise = "3.16.5"
-Test = "1.11.0"
+
+[workspace]
+projects = ["test", "apps/methanation", "apps/plug_flow", "apps/smb"]

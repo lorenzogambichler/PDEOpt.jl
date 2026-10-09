@@ -20,6 +20,10 @@ COPY --from=hsl . /opt/HSL_jll
 
 # Julia env
 COPY Project.toml Manifest.toml ./
+COPY test/Project.toml test/
+COPY apps/methanation/Project.toml apps/methanation/
+COPY apps/plug_flow/Project.toml apps/plug_flow/
+COPY apps/smb/Project.toml apps/smb/
 
 RUN mkdir -p src && printf 'module PDEOpt end\n' > src/PDEOpt.jl
 
@@ -31,9 +35,13 @@ COPY apps ./apps
 
 RUN julia -e 'using Pkg; Pkg.precompile()'
 
+RUN for p in apps/methanation apps/plug_flow; do \
+      julia --project=$p -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'; \
+    done
+
 RUN julia -e 'using HSL_jll; @assert isfile(HSL_jll.libhsl_path) HSL_jll.libhsl_path; println("HSL ok: ", HSL_jll.libhsl_path)'
 
 ENV JULIA_DEPOT_PATH=/tmp/julia-depot:/opt/julia
 
-ENTRYPOINT ["julia", "--project=/app"]
-CMD ["apps/methanation/opt.jl"]
+ENTRYPOINT ["julia"]
+CMD ["--project=/app/apps/methanation", "apps/methanation/opt.jl"]
