@@ -6,13 +6,13 @@ using Revise
 
 includet("problem.jl")
 
-# CN forward simulation at given wall temperature
+# CN forward simulation for given wall temperature trajectory
 function main(; tf=1000.0, Δt=0.5, nz=150, nr=7, ratio=1.0,
     recon::Symbol=:vanalbada)
 
     resultsdir = joinpath(@__DIR__, "results", "forward")
 
-    Tw = t -> 650.0 # constant Tw
+    Tw = t -> 650.0 # e.g. constant Tw
 
     @time cache, _ = cn_forward(Tw, tf, Δt; nz=nz, nr=nr, ratio=ratio, recon=recon)
 

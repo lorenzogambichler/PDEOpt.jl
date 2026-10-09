@@ -49,16 +49,20 @@ the control.
 
 ## Usage
 
-Requires Julia 1.10 or newer.
+Requires Julia 1.12 or newer.
+
+The repository uses [workspaces](https://pkgdocs.julialang.org/v1/toml-files/#Workspaces).
+Eeach case in `apps/` (and `test/`) has its own
+environment for dependencies (e.g. plotting, Revise).
 
 ```bash
 julia --project -e 'using Pkg; Pkg.instantiate()'
 ```
 
-Run the methanation optimal control problem:
+Drivers run in their case's environment. Run the methanation optimal control problem:
 
 ```bash
-julia --project apps/methanation/opt.jl
+julia --project=apps/methanation apps/methanation/opt.jl
 ```
 
 ### Docker
@@ -92,7 +96,8 @@ DETACH=1 NAME=meth-01 docker/run.sh # for SSH
 | [`src/optimization/`](src/optimization/) | NLP transcription, scaling, initial guesses |
 | [`src/io/`](src/io/) | VTK/CSV writers, `.vtr`/`.pvd` reader for post-processing |
 | [`src/diagnostics/`](src/diagnostics/) | Memory sampling, IPOPT log |
-| [`apps/`](apps/) | Driver scripts |
+| [`apps/`](apps/) | Cases, one environment each: `forward.jl` (simulation), `opt.jl` (OCP), `figures.jl` |
+| [`test/`](test/) | Test suite and its environment |
 
 ## References
 
