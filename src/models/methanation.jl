@@ -202,6 +202,13 @@ function face_velocity(m::MethanationModel, props::MethanationProps,
     end
 end
 
+# Per-field scaling for AntiDiffusion from a reference cell state yc (e.g. inlet)
+function antidiff_sc(m::MethanationModel, yc::AbstractVector; ΔT::Float64=450.0)
+    nsp = nspecies(m)
+    ctot = sum(yc[i] / m.M[i] for i in 1:nsp)
+    return [fi <= nsp ? ctot * m.M[fi] : ΔT for fi in eachindex(yc)]
+end
+
 # Reaction (Xu-Froment LHHW) 
 # Volumetric rates r̃_β in mol/(m³_cat s) from local yc
 function _rates(m::MethanationModel, yc)

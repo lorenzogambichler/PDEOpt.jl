@@ -21,7 +21,7 @@ include("nlp/nlp.jl")
 
 # Problem-specific constructions
 include("ocps/methanation/methanation.jl")
-#include("ocps/plug_flow/plug_flow.jl")
+include("ocps/plug_flow/plug_flow.jl")
 
 export AbstractOCP,
     # Layout
@@ -36,12 +36,15 @@ export AbstractOCP,
     CollocationResidual, retype,
     # Objective
     Objective,
+    # Solve
+    ZeroHessian, ObjectiveGradient, hsl_options, build_nlp, solve_ocp,
     # Methanation
     MethanationOCP, MethanationDynamics, MethanationCost,
     methanation_layout, methanation_scaling, methanation_bounds,
     methanation_residual, methanation_objective,
-    ZeroHessian, ObjectiveGradient, hsl_options, build_nlp, solve_ocp,
-    inflow, co2_inflow, outlet_conv, mean_conv, twshape, bisect_shape, bisect_const
+    inflow, co2_inflow, outlet_conv, mean_conv, twshape, bisect_shape, bisect_const,
     # Plug flow
-    # TODO
+    PlugFlowOCP, PlugFlowDynamics, PlugFlowCost,
+    plug_flow_layout, plug_flow_scaling, plug_flow_bounds,
+    plug_flow_residual, plug_flow_objective, plug_flow_outlet
 end

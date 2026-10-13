@@ -11,6 +11,9 @@ transported(::AbstractModel, ::Int) = true
 # Reassemble transport/capacity per step (state-dependent coefficients)?
 state_dependent(::AbstractModel) = false
 
+# Constant capacity of field fi (mass matrix and advection coeff), e.g. ρcp for T
+capacity(::AbstractModel, ::Int) = 1.0
+
 # Maps local cell state yc to volumetric source re (per field)
 abstract type Reaction end
 
@@ -45,7 +48,7 @@ export AbstractModel, transported, state_dependent,
     # methanation
     MethanationModel, MethanationProps, properties!, props_cell, nspecies,
     nspecies_val, nfields_val, reaction_cell, capacity_cell,
-    capacity, face_diffusivity, face_velocity,
+    capacity, face_diffusivity, face_velocity, antidiff_sc,
     # PSA
     PSAModel, AdsorptionLDF
     # SMB

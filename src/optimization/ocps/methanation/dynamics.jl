@@ -13,8 +13,10 @@ function MethanationDynamics(sa, y0::AbstractVector; Tmin, Tmax,
     prob = sa.prob
     recon in (:upwind1, :vanalbada) ||
         error("recon must be :upwind1 or :vanalbada, got :$recon")
+    sc = antidiff_sc(prob.model, collect(view(y0, celldof(prob.dm, 1)));
+        ΔT=(Float64(Tmax) - Float64(Tmin)))
     ad = recon === :upwind1 ? nothing :
-         AntiDiffusion(sa, collect(y0); ΔT=(Float64(Tmax)-Float64(Tmin)), rel=ad_rel)
+         AntiDiffusion(prob.grid, prob.geom, sa.dirs[1]..., sc; rel=ad_rel) # dirs[1] axial
 
     n = ndof(prob.dm)
     nnz(dropzeros(copy(prob.M))) == n || error("mass matrix not diagonal")

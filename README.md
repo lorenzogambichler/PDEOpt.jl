@@ -59,7 +59,7 @@ environment for dependencies (e.g. plotting, Revise).
 julia --project -e 'using Pkg; Pkg.instantiate()'
 ```
 
-Drivers run in their case's environment. Run the methanation optimal control problem:
+To run the methanation optimal control problem:
 
 ```bash
 julia --project=apps/methanation apps/methanation/opt.jl
