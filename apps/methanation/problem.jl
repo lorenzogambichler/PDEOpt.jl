@@ -75,7 +75,9 @@ function cn_forward(Twfun, tf::Float64, Δt_cn::Float64; nz=25, nr=3, ratio=8.0,
     end
 
     # Deferred correction for 2nd order (inexat newton)
-    ad = recon === :upwind1 ? nothing : AntiDiffusion(sa, y0)
+    sc = antidiff_sc(prob.model, view(y0, celldof(prob.dm, 1)))
+    ad = recon === :upwind1 ? nothing :
+         AntiDiffusion(prob.grid, prob.geom, sa.dirs[1]..., sc) # dirs[1] axial
     react! = function (y, WithJac)
         assemble_react!(prob, y, WithJac)
         isnothing(ad) ||

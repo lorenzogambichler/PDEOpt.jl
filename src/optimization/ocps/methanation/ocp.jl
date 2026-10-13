@@ -1,5 +1,5 @@
-struct MethanationOCP{TCL, TO, TR, TB, TS} <: AbstractOCP
-    lay::TCL # CollocationLayout
+struct MethanationOCP{TL, TO, TR, TB, TS} <: AbstractOCP
+    lay::TL # CollocationLayout
     scl::TS # Scaling
     bnd::TB # Bounds
     obj::TO # Objective
@@ -74,9 +74,8 @@ end
 
 # Radau IIA
 function methanation_layout(prob, Ne, Δt, s)
-    dm, m = prob.dm, prob.model
     coll = RadauIIA(s)
-    ny = ndof(dm)
+    ny = ndof(prob.dm)
     nu = 1 # wall temp
     return CollocationLayout(Ne, Δt, ny, nu, coll)
 end

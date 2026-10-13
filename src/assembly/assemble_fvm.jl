@@ -21,12 +21,13 @@ end
 diffusion_flux(Df::Real, area::Real, dist::Real) = Df * area / dist
 
 # Constant mass matrix assembly
-function assemble_mass!(M::AbstractSparseMatrix, grid::AbstractGrid, geom::AbstractGeometry, dm::DofMap)
+function assemble_mass!(M::AbstractSparseMatrix, grid::AbstractGrid, geom::AbstractGeometry,
+    dm::DofMap, model::AbstractModel)
     for fi in eachindex(dm.fields)
         for c = 1:ncells(grid)
             cdof = dof(dm, c, fi)
             i, j = cellij(grid, c)
-            M[cdof, cdof] = cellvolume(geom, i, j)
+            M[cdof, cdof] = cellvolume(geom, i, j) * capacity(model, fi)
         end
     end
 end
@@ -57,7 +58,8 @@ function assemble_transport!(K::AbstractSparseMatrix, dirs::NTuple{N,Tuple{FaceS
                 # Flux coeffs
                 k = diffusion_flux(diffusivity(model, fi, fs.axis),
                     fg.area[e], fg.dist[e]) # flux = k(yₒ - yₙ)
-                (co, cn) = advection_flux(velocity(model, fs.axis), fg.area[e]) # flux = cₒyₒ + cₙyₙ
+                (co, cn) = advection_flux(capacity(model, fi) * velocity(model, fs.axis),
+                    fg.area[e]) # flux = cₒyₒ + cₙyₙ
 
                 # Diffusion assembly
                 K[go, go] += k
@@ -195,11 +197,12 @@ end
 # Outlet (β·n > 0): ∂_zC(L) = 0 <=> J_ax(L)⋅A = β⋅A⋅C_out
 # => K[dof,dof] += β·n·A
 function assemble_inlet_outlet!(K::SparseMatrixCSC, f_in::AbstractVector,
-    dm::DofMap, geom::AbstractGeometry, grid::AbstractGrid, model::AbstractModel,
+    dm::DofMap, geom::Geometry2D, grid::StructGrid2D, model::AbstractModel,
     bcs::Vararg{Tuple{BoundaryFaceSet, BoundaryFaceGeometry}}; fields=dm.fields)
     for field in fields
+        cap = capacity(model, fieldindex(dm, field))
         for (bfs, bfg) in bcs
-            βn = velocity(model, bfs.axis) * bfs.side
+            βn = cap * velocity(model, bfs.axis) * bfs.side
             for k = 1:length(bfs.cells)
                 A = bfg.area[k]
                 c = bfs.cells[k]
@@ -214,9 +217,29 @@ function assemble_inlet_outlet!(K::SparseMatrixCSC, f_in::AbstractVector,
         end
     end
 end
+function assemble_inlet_outlet!(K::SparseMatrixCSC, f_in::AbstractVector,
+    dm::DofMap, grid::StructGrid1D, model::AbstractModel,
+    bcs::Vararg{Tuple{BoundaryFaceSet, BoundaryFaceGeometry}}; fields=dm.fields)
+    for field in fields
+        cap = capacity(model, fieldindex(dm, field))
+        for (bfs, bfg) in bcs
+            βn = cap * velocity(model, bfs.axis) * bfs.side
+            for k = 1:length(bfs.cells)
+                A = bfg.area[k]
+                c = bfs.cells[k]
+                gc = dof(dm, c, field)
+                if βn > 0
+                    K[gc, gc] += βn * A
+                elseif βn < 0
+                    f_in[gc] += -βn * A
+                end
+            end
+        end
+    end
+end
 
-# Flux: -λ⋅∂ᵣT(r=R)⋅A = U⋅A⋅(T - Tw)
-# K[dof,dof] += U⋅A, f_wall[dof] += U⋅A
+# Flux: -λ⋅∂ᵣT(r=R)⋅A = U⋅A⋅(T - Tw) -> StructGrid2D
+# K[dof,dof] += U⋅A, f_wall[dof] = U⋅A
 function assemble_wall!(K::AbstractSparseMatrix, f_wall::AbstractVector, dm::DofMap,
     model::AbstractModel, bfs::BoundaryFaceSet, bfg::BoundaryFaceGeometry)
     for k = 1:length(bfs.cells)
@@ -225,6 +248,17 @@ function assemble_wall!(K::AbstractSparseMatrix, f_wall::AbstractVector, dm::Dof
         gc = dof(dm, c, wall_field(model))
         K[gc, gc] += wall_coeff(model) * A
         f_wall[gc] = wall_coeff(model) * A
+    end
+end
+# Source term: Q_cool = 4⋅U/d⋅(Tw - T) -> StructGrid1D
+# K[dof,dof] += U⋅(4/d)⋅V, f_wall[dof] = U⋅(4/d)⋅V
+function assemble_wall!(K::AbstractSparseMatrix, f_wall::AbstractVector, dm::DofMap,
+    model::AbstractModel, geom::Geometry1D)
+    for i = 1:dm.ncells
+        V = cellvolume(geom, i, 1)
+        gc = dof(dm, i, wall_field(model))
+        K[gc, gc] += wall_coeff(model) * V
+        f_wall[gc] = wall_coeff(model) * V
     end
 end
 
@@ -260,34 +294,21 @@ end
 @inline vanalbada(a, b, ε) = a * b * (a + b) / (a * a + b * b + ε)
 
 # ε for vanalbada (dependent)
-antidiff_eps(yref::AbstractVector, href::Real; rel::Real=1e-3) =
-    [(rel * yr / href)^2 for yr in yref]
+antidiff_eps(sc::AbstractVector, href::Real; rel::Real=1e-3) =
+    [(rel * s / href)^2 for s in sc]
 
 # 2nd-order axial advection (nothing = 1st order)
 struct AntiDiffusion
     st::UpwindStencil
     fs::FaceSet # axial
     fg::FaceGeometry # axial
-    εf::Vector{Float64} # ε limiter (per-field))
+    εf::Vector{Float64} # limiter ϵ (per-field)
 end
 
-# Axial (fs, fg) from sa.dirs
-function _axial_dir(sa::StateAssembly)
-    i = findfirst(d -> first(d).axis == 1, sa.dirs)
-    isnothing(i) && error("no axial (axis 1) face set in StateAssembly.dirs")
-    return sa.dirs[i]
-end
-
-function AntiDiffusion(sa::StateAssembly, y0::Vector{Float64};
-    ΔT::Float64=450.0, rel::Float64=1e-3)
-    prob = sa.prob
-    dm, m, grid, geom = prob.dm, prob.model, prob.grid, prob.geom
-    nsp = nspecies(m)
-    ctot = sum(y0[dof(dm, 1, α)] / m.M[α] for α in 1:nsp)
-    yref = [fi <= nsp ? ctot * m.M[fi] : ΔT for fi in 1:length(dm.fields)]
-    fs, fg = _axial_dir(sa)
+function AntiDiffusion(grid::AbstractGrid, geom::AbstractGeometry, fs::FaceSet, fg::FaceGeometry, 
+    sc::AbstractVector; rel::Float64=1e-3)
     st = UpwindStencil(grid, geom, fs)
-    return AntiDiffusion(st, fs, fg, antidiff_eps(yref, minimum(geom.dz); rel=rel))
+    return AntiDiffusion(st, fs, fg, antidiff_eps(sc, minimum(geom.dz); rel=rel))
 end
 
 # 2nd-order axial advection correction (face value y_f = y_o  -> y_f = y_o + ψ(a,b)·df)

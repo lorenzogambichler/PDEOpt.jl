@@ -66,7 +66,7 @@ function bisect_const(forward, Ne::Int; Tmax, Tw_min=300.0, Tw_max=650.0,
     end
 
     lo, hi, it = Tw_min, Tw_max, 2
-    best = (Zl, Tw_min, Tl)
+    best = (Yl, Tw_min, Tl)
     while hi - lo > tol && it < itmax
         mid = 0.5 * (lo + hi)
         Zm, Tm = forward(mid)

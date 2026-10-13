@@ -61,7 +61,7 @@ function setup_problem()
     # Assembly 
     f_in = zeros(ndof(dm))
     f_wall = zeros(ndof(dm))
-    assemble_mass!(M, grid, geom, dm)
+    assemble_mass!(M, grid, geom, dm, model)
     assemble_transport!(K, ((fs_axial,fg_axial),(fs_radial,fg_radial)), dm, model)
     assemble_inlet_outlet!(K, f_in, dm, geom, grid, model,
         (bfs.inlet, bfg_inlet), (bfs.outlet, bfg_outlet))

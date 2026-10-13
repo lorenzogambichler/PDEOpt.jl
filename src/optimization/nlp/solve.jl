@@ -26,24 +26,31 @@ function hsl_options(linear_solver::String)
     end
 end
 
+# override for different AbstractOCP structure
+layout(ocp::AbstractOCP) = ocp.lay
+scaling(ocp::AbstractOCP) = ocp.scl
+objective(ocp::AbstractOCP) = ocp.obj
+residual(ocp::AbstractOCP) = ocp.rsd
+bound_vecs(ocp::AbstractOCP) = assemble_bound_vecs(ocp.lay, ocp.bnd, ocp.y0)
+
 # x0 physical -> NLP scaled
-function build_nlp(ocp::MethanationOCP, x0::AbstractVector; hessian::Symbol=:lbfgs)
+function build_nlp(ocp::AbstractOCP, x0::AbstractVector; hessian::Symbol=:lbfgs)
     hessian === :lbfgs || error("hessian=:$hessian not implemented yet, use :lbfgs")
-    lay, scl = ocp.lay, ocp.scl
+    lay, scl, obj, rsd = layout(ocp), scaling(ocp), objective(ocp), residual(ocp)
     length(x0) == nvars(lay) ||
         throw(DimensionMismatch("x0 has length $(length(x0)), expected $(nvars(lay))"))
 
     x0sc = scale_x(lay, scl, x0)
-    lvar, uvar = scale_bounds(lay, scl, assemble_bound_vecs(lay, ocp.bnd, ocp.y0)...)
+    lvar, uvar = scale_bounds(lay, scl, bound_vecs(ocp)...)
     lcon = zeros(ncons(lay))
     ucon = zeros(ncons(lay))
-    c! = (cx, x) -> ocp.rsd(cx, x) # ADNLPModels needs function (not functor)
+    c! = (cx, x) -> rsd(cx, x) # ADNLPModels needs function (not functor)
 
-    return ADNLPModel!(ocp.obj.cost, x0sc, lvar, uvar, c!, lcon, ucon;
-        gradient_backend=ObjectiveGradient(ocp.obj), hessian_backend=ZeroHessian)
+    return ADNLPModel!(obj.cost, x0sc, lvar, uvar, c!, lcon, ucon;
+        gradient_backend=ObjectiveGradient(obj), hessian_backend=ZeroHessian)
 end
 
-function solve_ocp(ocp::MethanationOCP, x0::AbstractVector; linear_solver::String="ma97", 
+function solve_ocp(ocp::AbstractOCP, x0::AbstractVector; linear_solver::String="ma97",
     hessian::Symbol=:lbfgs, kwargs...)
     nlp = build_nlp(ocp, x0; hessian=hessian)
     # kwargs override
@@ -55,7 +62,8 @@ function solve_ocp(ocp::MethanationOCP, x0::AbstractVector; linear_solver::Strin
     stats = ipopt(nlp; opts...)
 
     # scaled sol -> physical trajectory
-    x = unscale_x(ocp.lay, ocp.scl, stats.solution)
-    Y, U = unpack(ocp.lay, x)
-    return (Y=Y, U=U, t=stage_times(ocp.lay), tu=element_times(ocp.lay), stats=stats)
+    lay = layout(ocp)
+    x = unscale_x(lay, scaling(ocp), stats.solution)
+    Y, U = unpack(lay, x)
+    return (Y=Y, U=U, t=stage_times(lay), tu=element_times(lay), stats=stats)
 end

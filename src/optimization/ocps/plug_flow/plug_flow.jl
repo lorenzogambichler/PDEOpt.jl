@@ -1,3 +1,4 @@
-struct PlugFlowOCP{} <: AbstractOCP
-    # TODO
-end
+include("objective.jl")
+include("dynamics.jl")
+include("ocp.jl")
+include("postprocess.jl")

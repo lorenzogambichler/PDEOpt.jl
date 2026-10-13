@@ -55,7 +55,7 @@ export AbstractModel, PlugFlowModel, PSAModel, MethanationModel, MethanationProp
     Reaction, Arrhenius, AdsorptionLDF,
     fields, transported, state_dependent, diffusivity, velocity, nspecies,
     reaction!, reaction_jac!, reaction_jac_fd!, reaction_source, properties!, props_cell,
-    nspecies_val, nfields_val, reaction_cell, capacity_cell, capacity,
+    nspecies_val, nfields_val, reaction_cell, capacity_cell, capacity, antidiff_sc,
     inlet_value, wall_coeff, wall_field, inlet_mod, wall_mod
 
 # Assembled-problem container
@@ -95,9 +95,11 @@ export AbstractOCP,
     methanation_layout, methanation_scaling, methanation_bounds,
     methanation_residual, methanation_objective,
     ZeroHessian, ObjectiveGradient, hsl_options, build_nlp, solve_ocp,
-    inflow, co2_inflow, outlet_conv, mean_conv, twshape, bisect_const, bisect_shape
+    inflow, co2_inflow, outlet_conv, mean_conv, twshape, bisect_const, bisect_shape,
     # Plug flow
-    # TODO
+    PlugFlowOCP, PlugFlowDynamics, PlugFlowCost,
+    plug_flow_layout, plug_flow_scaling, plug_flow_bounds,
+    plug_flow_residual, plug_flow_objective, plug_flow_outlet
 
 # Profiling
 export MemTrace, memtrace,

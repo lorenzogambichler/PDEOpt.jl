@@ -108,7 +108,6 @@ function build_nlp(prob::ProblemCache, m::PlugFlowModel, opt::OptCache, Δt::Flo
         sum(velocity(m, 1) * bfg_outlet.area[j] * y[dof(dm, c, :C), k]
         for (j, c) in enumerate(outlet_cells), k in 1:N)
         + opt.γ * sum((Twtil[k+1]-Twtil[k])^2 for k in 1:N-1))
-    # TODO proper quadrature?
 
     return model, (; y, u = Tw)
 end
